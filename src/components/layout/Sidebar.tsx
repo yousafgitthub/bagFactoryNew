@@ -40,6 +40,7 @@ import {
   Percent,
   Coins,
   Cog,
+  CheckCircle2,
 } from 'lucide-react';
 
 interface NavItem {
@@ -90,6 +91,21 @@ export function Sidebar() {
     { id: 'inv-settings', label: 'Inventory Settings', icon: Settings },
   ];
 
+  const productionNavItems: NavItem[] = [
+    { id: 'production', label: 'Overview', icon: Factory },
+    { id: 'production-planning', label: 'Planning', icon: ListOrdered },
+    { id: 'production-orders', label: 'Orders', icon: List },
+    { id: 'production-create', label: 'Create Batch', icon: Plus },
+    { id: 'production-active', label: 'Active Production', icon: Sparkles },
+    { id: 'production-completed', label: 'Completed', icon: CheckCircle2 },
+    { id: 'production-consumption', label: 'Consumption', icon: PackageMinus },
+    { id: 'production-output', label: 'Output', icon: ArrowUpFromLine },
+    { id: 'production-loss', label: 'Production Loss', icon: Percent },
+    { id: 'production-costs', label: 'Costs', icon: Coins },
+    { id: 'production-reports', label: 'Reports', icon: BarChart3 },
+    { id: 'production-settings', label: 'Settings', icon: Cog },
+  ];
+
   const recyclingNavItems: NavItem[] = [
     { id: 'recycling', label: 'Overview', icon: Recycle },
     { id: 'recycling-batches', label: 'Recycling Batches', icon: ListOrdered },
@@ -105,10 +121,11 @@ export function Sidebar() {
   const navGroups: NavGroup[] = [
     {
       title: 'WORKSPACE',
-      items: [
-        { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
-        { id: 'production', label: 'Production', icon: Factory },
-      ],
+      items: [{ id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard }],
+    },
+    {
+      title: 'PRODUCTION MANAGEMENT',
+      items: productionNavItems,
     },
     {
       title: 'RECYCLING MANAGEMENT',

@@ -7,6 +7,15 @@ import {
   InventoryItem,
   StockMovement,
   ProductionBatch,
+  ProductionPlan,
+  ProductionOrder,
+  ProductionSettings,
+  ProductionMachine,
+  ProductionOperator,
+  ProductionBatchTimelineEvent,
+  ProductionPriority,
+  ProductionPlanStatus,
+  ProductionOrderStatus,
   RecyclingBatch,
   SalesInvoice,
   PurchaseBill,
@@ -82,6 +91,64 @@ import {
   postRecycledOutputs,
   restoreWasteStock,
 } from '../recycling/recyclingStock';
+import {
+  DEFAULT_PRODUCTION_SETTINGS,
+  INITIAL_PRODUCTION_MACHINES,
+  INITIAL_PRODUCTION_OPERATORS,
+  INITIAL_PRODUCTION_PLANS,
+  INITIAL_PRODUCTION_ORDERS,
+} from '../data/production';
+import {
+  computeProductionMetrics,
+  generateProductionBatchNumber,
+  generateProductionOrderNumber,
+  generateProductionPlanNumber,
+  normalizeLegacyBatch,
+  validateProductionOutput,
+  validateRawMaterialForSource,
+  estimateInputFromPlan,
+} from '../production/productionUtils';
+import {
+  buildProductionMovements,
+  deductRawMaterialStock,
+  postFinishedGoodsOutput,
+  refreshBatchCosts,
+  restoreRawMaterialStock,
+  reverseFinishedGoodsOutput,
+} from '../production/productionStock';
+
+export type ProductionBatchFormInput = {
+  id?: string;
+  batchNumber?: string;
+  productName: string;
+  color: string;
+  materialSource: 'NEW' | 'RECYCLED';
+  rawMaterialBatchId: string;
+  rawMaterialName?: string;
+  inputWarehouse: string;
+  rawMaterialQtyKg: number;
+  plannedInputQtyKg?: number;
+  finishedGoodsOutputKg: number;
+  rejectedOutputKg: number;
+  reusableByproductKg: number;
+  finishedGoodsWarehouse: string;
+  productionDate: string;
+  laborCost: number;
+  electricityCost: number;
+  machineCost: number;
+  maintenanceCost: number;
+  packagingCost: number;
+  transportCost: number;
+  otherCosts: number;
+  operator: string;
+  machineId?: string;
+  machineName?: string;
+  shift?: string;
+  notes?: string;
+  outputBatchNumber?: string;
+  productionOrderRef?: string;
+  productionPlanRef?: string;
+};
 
 export type RecyclingBatchFormInput = {
   id?: string;
@@ -124,6 +191,18 @@ export type ActiveView =
   | 'inv-reports'
   | 'inv-settings'
   | 'production'
+  | 'production-planning'
+  | 'production-orders'
+  | 'production-create'
+  | 'production-active'
+  | 'production-completed'
+  | 'production-consumption'
+  | 'production-output'
+  | 'production-loss'
+  | 'production-costs'
+  | 'production-reports'
+  | 'production-settings'
+  | 'production-batch-detail'
   | 'recycling'
   | 'recycling-batches'
   | 'recycling-create'
@@ -172,6 +251,11 @@ interface ERPContextType {
   inventory: InventoryItem[];
   stockMovements: StockMovement[];
   productionBatches: ProductionBatch[];
+  productionPlans: ProductionPlan[];
+  productionOrders: ProductionOrder[];
+  productionSettings: ProductionSettings;
+  productionMachines: ProductionMachine[];
+  productionOperators: ProductionOperator[];
   recyclingBatches: RecyclingBatch[];
   salesInvoices: SalesInvoice[];
   purchaseBills: PurchaseBill[];
@@ -208,6 +292,21 @@ interface ERPContextType {
   setWarehouseStatus: (warehouseId: string, status: 'Active' | 'Inactive') => void;
   updateInventoryModuleSettings: (settings: InventoryModuleSettings) => void;
   createProductionBatch: (batchData: Omit<ProductionBatch, 'id' | 'processingLossKg' | 'yieldPercentage' | 'totalCost' | 'costPerKg'>) => void;
+  saveProductionBatchDraft: (input: ProductionBatchFormInput) => string;
+  updateProductionBatchDraft: (batchId: string, input: ProductionBatchFormInput) => void;
+  startProductionBatch: (batchId: string) => void;
+  completeProductionBatch: (batchId: string) => void;
+  completeProductionFromInput: (input: ProductionBatchFormInput) => string;
+  cancelProductionBatch: (batchId: string, reason: string) => void;
+  upsertProductionPlan: (plan: Omit<ProductionPlan, 'id' | 'planNumber'> & { id?: string; planNumber?: string }) => void;
+  updateProductionPlanStatus: (planId: string, status: ProductionPlanStatus, cancelReason?: string) => void;
+  upsertProductionOrder: (order: Omit<ProductionOrder, 'id' | 'orderNumber' | 'linkedBatchIds'> & { id?: string; orderNumber?: string }) => void;
+  updateProductionOrderStatus: (orderId: string, status: ProductionOrderStatus, cancelReason?: string) => void;
+  convertPlanToBatch: (planId: string) => string;
+  convertOrderToBatch: (orderId: string) => string;
+  updateProductionSettings: (settings: ProductionSettings) => void;
+  upsertProductionMachine: (machine: ProductionMachine) => void;
+  upsertProductionOperator: (operator: ProductionOperator) => void;
   createRecyclingBatch: (
     batchData: Omit<
       RecyclingBatch,
@@ -257,7 +356,14 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
   // Collections
   const [inventory, setInventory] = useState<InventoryItem[]>(INITIAL_INVENTORY);
   const [stockMovements, setStockMovements] = useState<StockMovement[]>(INITIAL_STOCK_MOVEMENTS);
-  const [productionBatches, setProductionBatches] = useState<ProductionBatch[]>(INITIAL_PRODUCTION_BATCHES);
+  const [productionBatches, setProductionBatches] = useState<ProductionBatch[]>(() =>
+    INITIAL_PRODUCTION_BATCHES.map(normalizeLegacyBatch)
+  );
+  const [productionPlans, setProductionPlans] = useState<ProductionPlan[]>(INITIAL_PRODUCTION_PLANS);
+  const [productionOrders, setProductionOrders] = useState<ProductionOrder[]>(INITIAL_PRODUCTION_ORDERS);
+  const [productionSettings, setProductionSettings] = useState<ProductionSettings>(DEFAULT_PRODUCTION_SETTINGS);
+  const [productionMachines, setProductionMachines] = useState<ProductionMachine[]>(INITIAL_PRODUCTION_MACHINES);
+  const [productionOperators, setProductionOperators] = useState<ProductionOperator[]>(INITIAL_PRODUCTION_OPERATORS);
   const [recyclingBatches, setRecyclingBatches] = useState<RecyclingBatch[]>(INITIAL_RECYCLING_BATCHES);
   const [salesInvoices, setSalesInvoices] = useState<SalesInvoice[]>(INITIAL_SALES_INVOICES);
   const [purchaseBills, setPurchaseBills] = useState<PurchaseBill[]>(INITIAL_PURCHASE_BILLS);
@@ -574,144 +680,524 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
     showToast('success', 'Transfer Completed', `Transferred ${qtyKg} kg to ${toWarehouse}`);
   };
 
-  // 4. Create Production Batch (STRICT SEPARATION: Only NEW or RECYCLED)
+  const buildProductionBatchFromForm = (
+    input: ProductionBatchFormInput,
+    status: ProductionBatch['status'],
+    flags: { rawStockDeducted: boolean; finishedStockPosted: boolean },
+    timeline: ProductionBatchTimelineEvent[]
+  ): ProductionBatch | null => {
+    const rawItem = input.rawMaterialBatchId
+      ? inventory.find((i) => i.id === input.rawMaterialBatchId)
+      : undefined;
+    if (input.rawMaterialBatchId || status !== 'Draft') {
+      const sourceCheck = validateRawMaterialForSource(rawItem, input.materialSource);
+      if (!sourceCheck.valid) {
+        showToast('error', 'Source Violation', sourceCheck.message);
+        return null;
+      }
+      if (!rawItem) return null;
+    }
+
+    const outputCheck = validateProductionOutput(
+      input.rawMaterialQtyKg,
+      input.finishedGoodsOutputKg,
+      input.rejectedOutputKg,
+      input.reusableByproductKg
+    );
+    if (!outputCheck.valid && status === 'Completed') {
+      showToast('error', 'Validation Failed', outputCheck.message);
+      return null;
+    }
+
+    if (rawItem && status !== 'Draft' && rawItem.availableKg < input.rawMaterialQtyKg && !flags.rawStockDeducted) {
+      showToast('error', 'Insufficient Stock', `Only ${rawItem.availableKg} kg available`);
+      return null;
+    }
+
+    const batchNumber =
+      input.batchNumber || generateProductionBatchNumber(productionBatches, productionSettings);
+    const rawCostPerKg = rawItem?.unitCost || 0;
+    let batch: ProductionBatch = {
+      id: input.id || 'prd-' + Date.now(),
+      batchNumber,
+      productName: input.productName,
+      color: input.color,
+      materialSource: input.materialSource,
+      rawMaterialName: input.rawMaterialName || rawItem?.name || '—',
+      rawMaterialBatchId: rawItem?.id || input.rawMaterialBatchId,
+      inputWarehouse: input.inputWarehouse || rawItem?.warehouse || '',
+      rawMaterialQtyKg: input.rawMaterialQtyKg,
+      plannedInputQtyKg: input.plannedInputQtyKg,
+      rawMaterialCostPerKg: rawCostPerKg,
+      finishedGoodsOutputKg: input.finishedGoodsOutputKg,
+      rejectedOutputKg: input.rejectedOutputKg,
+      reusableByproductKg: input.reusableByproductKg,
+      processingLossKg: 0,
+      yieldPercentage: 0,
+      productionDate: input.productionDate,
+      laborCost: input.laborCost,
+      electricityCost: input.electricityCost,
+      machineCost: input.machineCost,
+      maintenanceCost: input.maintenanceCost,
+      packagingCost: input.packagingCost,
+      transportCost: input.transportCost,
+      otherCosts: input.otherCosts,
+      totalCost: 0,
+      costPerKg: 0,
+      operator: input.operator,
+      machineId: input.machineId,
+      machineName: input.machineName,
+      shift: input.shift,
+      status,
+      notes: input.notes,
+      outputBatchNumber:
+        input.outputBatchNumber ||
+        `FG-${input.productName.slice(0, 4).toUpperCase()}-${input.color.slice(0, 1)}-${Date.now().toString().slice(-4)}`,
+      finishedGoodsWarehouse: input.finishedGoodsWarehouse,
+      productionOrderRef: input.productionOrderRef,
+      productionPlanRef: input.productionPlanRef,
+      rawStockDeducted: flags.rawStockDeducted,
+      finishedStockPosted: flags.finishedStockPosted,
+      timeline,
+    };
+    batch = refreshBatchCosts(batch, rawItem);
+    return batch;
+  };
+
+  const saveProductionBatchDraft = (input: ProductionBatchFormInput): string => {
+    const timeline: ProductionBatchTimelineEvent[] = [
+      {
+        id: 'tl-' + Date.now(),
+        at: new Date().toISOString(),
+        label: 'Created',
+        detail: 'Draft saved — inventory unchanged',
+      },
+    ];
+    const batch = buildProductionBatchFromForm(
+      input,
+      'Draft',
+      { rawStockDeducted: false, finishedStockPosted: false },
+      timeline
+    );
+    if (!batch) return '';
+    setProductionBatches((prev) => [batch, ...prev]);
+    showToast('success', 'Draft Saved', `Batch ${batch.batchNumber} saved`);
+    return batch.id;
+  };
+
+  const updateProductionBatchDraft = (batchId: string, input: ProductionBatchFormInput) => {
+    const existing = productionBatches.find((b) => b.id === batchId);
+    if (!existing || existing.status !== 'Draft') {
+      showToast('error', 'Cannot Edit', 'Only draft batches can be edited');
+      return;
+    }
+    const updated = buildProductionBatchFromForm(
+      { ...input, id: batchId, batchNumber: existing.batchNumber },
+      'Draft',
+      { rawStockDeducted: false, finishedStockPosted: false },
+      [...existing.timeline, { id: 'tl-' + Date.now(), at: new Date().toISOString(), label: 'Draft updated' }]
+    );
+    if (!updated) return;
+    setProductionBatches((prev) => prev.map((b) => (b.id === batchId ? updated : b)));
+    showToast('success', 'Draft Updated', updated.batchNumber);
+  };
+
+  const startProductionBatch = (batchId: string) => {
+    const batch = productionBatches.find((b) => b.id === batchId);
+    if (!batch) return;
+    if (batch.status !== 'Draft') {
+      showToast('error', 'Invalid Transition', 'Only draft batches can be started');
+      return;
+    }
+    if (batch.rawStockDeducted) {
+      showToast('info', 'Already Started', 'Raw material already deducted');
+      return;
+    }
+    const rawItem = inventory.find((i) => i.id === batch.rawMaterialBatchId);
+    if (!rawItem || rawItem.availableKg < batch.rawMaterialQtyKg) {
+      showToast('error', 'Insufficient Stock', 'Cannot start — not enough raw material');
+      return;
+    }
+    setInventory((prev) => {
+      const next = deductRawMaterialStock(prev, rawItem.id, batch.rawMaterialQtyKg);
+      syncWarehouseLoads(next);
+      return next;
+    });
+    setProductionBatches((prev) =>
+      prev.map((b) =>
+        b.id === batchId
+          ? {
+              ...b,
+              status: 'In Progress',
+              rawStockDeducted: true,
+              timeline: [
+                ...b.timeline,
+                {
+                  id: 'tl-start-' + Date.now(),
+                  at: new Date().toISOString(),
+                  label: 'Production started',
+                  detail: `${batch.rawMaterialQtyKg} kg deducted from ${b.inputWarehouse}`,
+                },
+              ],
+            }
+          : b
+      )
+    );
+    showToast('success', 'Production Started', batch.batchNumber);
+  };
+
+  const completeProductionBatch = (batchId: string) => {
+    const batch = productionBatches.find((b) => b.id === batchId);
+    if (!batch) return;
+    if (batch.status === 'Completed') {
+      showToast('error', 'Already Completed', 'Batch cannot be completed twice');
+      return;
+    }
+    if (batch.finishedStockPosted) {
+      showToast('error', 'Already Posted', 'Finished goods already posted');
+      return;
+    }
+    const outputCheck = validateProductionOutput(
+      batch.rawMaterialQtyKg,
+      batch.finishedGoodsOutputKg,
+      batch.rejectedOutputKg,
+      batch.reusableByproductKg
+    );
+    if (!outputCheck.valid) {
+      showToast('error', 'Validation Failed', outputCheck.message);
+      return;
+    }
+    if (batch.finishedGoodsOutputKg <= 0) {
+      showToast('error', 'No Output', 'Record saleable finished output before completing');
+      return;
+    }
+
+    const rawItem = inventory.find((i) => i.id === batch.rawMaterialBatchId);
+    if (!rawItem) return;
+
+    if (!batch.rawStockDeducted) {
+      if (rawItem.availableKg < batch.rawMaterialQtyKg) {
+        showToast('error', 'Insufficient Stock', 'Not enough raw material to complete');
+        return;
+      }
+      setInventory((prev) => deductRawMaterialStock(prev, rawItem.id, batch.rawMaterialQtyKg));
+    }
+
+    const finalized = refreshBatchCosts(batch, rawItem);
+    setInventory((prev) => {
+      const next = postFinishedGoodsOutput(
+        prev,
+        finalized,
+        finalized.finishedGoodsOutputKg,
+        finalized.costPerKg
+      );
+      syncWarehouseLoads(next);
+      return next;
+    });
+
+    const movements = buildProductionMovements(finalized, rawItem, batch.operator);
+    setStockMovements((prev) => [...movements, ...prev]);
+
+    setProductionBatches((prev) =>
+      prev.map((b) =>
+        b.id === batchId
+          ? {
+              ...finalized,
+              status: 'Completed',
+              rawStockDeducted: true,
+              finishedStockPosted: true,
+              completedAt: new Date().toISOString(),
+              timeline: [
+                ...b.timeline,
+                {
+                  id: 'tl-complete-' + Date.now(),
+                  at: new Date().toISOString(),
+                  label: 'Production completed',
+                  detail: `${finalized.finishedGoodsOutputKg} kg finished goods posted`,
+                },
+              ],
+            }
+          : b
+      )
+    );
+    showToast('success', 'Production Completed', `${batch.batchNumber} — Rs. ${finalized.costPerKg}/kg`);
+  };
+
+  const cancelProductionBatch = (batchId: string, reason: string) => {
+    const batch = productionBatches.find((b) => b.id === batchId);
+    if (!batch) return;
+    if (batch.status === 'Completed') {
+      showToast('error', 'Cannot Cancel', 'Completed batches cannot be cancelled');
+      return;
+    }
+  if (batch.rawStockDeducted && !batch.finishedStockPosted) {
+      setInventory((prev) => {
+        const next = restoreRawMaterialStock(prev, batch.rawMaterialBatchId, batch.rawMaterialQtyKg);
+        syncWarehouseLoads(next);
+        return next;
+      });
+    }
+    if (batch.finishedStockPosted) {
+      setInventory((prev) => {
+        const next = reverseFinishedGoodsOutput(prev, batch, batch.finishedGoodsOutputKg);
+        syncWarehouseLoads(next);
+        return next;
+      });
+    }
+    setProductionBatches((prev) =>
+      prev.map((b) =>
+        b.id === batchId
+          ? {
+              ...b,
+              status: 'Cancelled',
+              cancelledAt: new Date().toISOString(),
+              cancelReason: reason,
+              timeline: [
+                ...b.timeline,
+                { id: 'tl-cancel-' + Date.now(), at: new Date().toISOString(), label: 'Cancelled', detail: reason },
+              ],
+            }
+          : b
+      )
+    );
+    showToast('warning', 'Batch Cancelled', reason);
+  };
+
+  const completeProductionFromInput = (input: ProductionBatchFormInput): string => {
+    const timeline: ProductionBatchTimelineEvent[] = [
+      { id: 'tl-' + Date.now(), at: new Date().toISOString(), label: 'Created' },
+      { id: 'tl-c-' + Date.now(), at: new Date().toISOString(), label: 'Production completed' },
+    ];
+    const draft = buildProductionBatchFromForm(
+      input,
+      'Draft',
+      { rawStockDeducted: false, finishedStockPosted: false },
+      timeline
+    );
+    if (!draft) return '';
+    const rawItem = inventory.find((i) => i.id === draft.rawMaterialBatchId);
+    if (!rawItem || rawItem.availableKg < draft.rawMaterialQtyKg) {
+      showToast('error', 'Insufficient Stock', 'Cannot complete production');
+      return '';
+    }
+    const finalized = refreshBatchCosts(draft, rawItem);
+    setInventory((prev) => {
+      let next = deductRawMaterialStock(prev, rawItem.id, finalized.rawMaterialQtyKg);
+      next = postFinishedGoodsOutput(next, finalized, finalized.finishedGoodsOutputKg, finalized.costPerKg);
+      syncWarehouseLoads(next);
+      return next;
+    });
+    setStockMovements((prev) => [...buildProductionMovements(finalized, rawItem, draft.operator), ...prev]);
+    const id = draft.id;
+    setProductionBatches((prev) => [
+      {
+        ...finalized,
+        id,
+        status: 'Completed',
+        rawStockDeducted: true,
+        finishedStockPosted: true,
+        completedAt: new Date().toISOString(),
+        timeline,
+      },
+      ...prev.filter((b) => b.id !== id),
+    ]);
+    showToast('success', 'Production Completed', finalized.batchNumber);
+    return id;
+  };
+
   const createProductionBatch = (
     data: Omit<ProductionBatch, 'id' | 'processingLossKg' | 'yieldPercentage' | 'totalCost' | 'costPerKg'>
   ) => {
-    // Validate source stock
-    const rawItem = inventory.find((i) => i.id === data.rawMaterialBatchId);
-    if (!rawItem) {
-      showToast('error', 'Invalid Material', 'Selected raw material batch not found');
-      return;
-    }
-    if (rawItem.availableKg < data.rawMaterialQtyKg) {
-      showToast('error', 'Insufficient Stock', `Only ${rawItem.availableKg} kg available in stock`);
-      return;
-    }
-
-    // STRICT: check that rawItem category aligns with materialSource
-    if (data.materialSource === 'NEW' && rawItem.category !== 'NEW_BRANDED') {
-      showToast('error', 'Source Violation', 'NEW source batch must only use New Branded Raw Material');
-      return;
-    }
-    if (data.materialSource === 'RECYCLED' && rawItem.category !== 'RECYCLED_RAW') {
-      showToast('error', 'Source Violation', 'RECYCLED source batch must only use Recycled Raw Material');
-      return;
-    }
-
-    const lossKg = Math.max(0, data.rawMaterialQtyKg - data.finishedGoodsOutputKg);
-    const yieldPct = Number(((data.finishedGoodsOutputKg / data.rawMaterialQtyKg) * 100).toFixed(2));
-    const materialCost = data.rawMaterialQtyKg * rawItem.unitCost;
-    const conversionCosts = data.laborCost + data.electricityCost + data.machineCost + data.otherCosts;
-    const totalCost = materialCost + conversionCosts;
-    const costPerKg = Number((totalCost / data.finishedGoodsOutputKg).toFixed(2));
-
-    const newBatch: ProductionBatch = {
-      ...data,
-      id: 'prd-' + Date.now(),
-      processingLossKg: lossKg,
-      yieldPercentage: yieldPct,
-      totalCost: totalCost,
-      costPerKg: costPerKg,
+    const input: ProductionBatchFormInput = {
+      batchNumber: data.batchNumber,
+      productName: data.productName,
+      color: data.color,
+      materialSource: data.materialSource,
+      rawMaterialBatchId: data.rawMaterialBatchId,
+      rawMaterialName: data.rawMaterialName,
+      inputWarehouse: data.inputWarehouse || '',
+      rawMaterialQtyKg: data.rawMaterialQtyKg,
+      finishedGoodsOutputKg: data.finishedGoodsOutputKg,
+      rejectedOutputKg: data.rejectedOutputKg ?? 0,
+      reusableByproductKg: data.reusableByproductKg ?? 0,
+      finishedGoodsWarehouse: data.finishedGoodsWarehouse || 'Finished Goods Hall D',
+      productionDate: data.productionDate,
+      laborCost: data.laborCost,
+      electricityCost: data.electricityCost,
+      machineCost: data.machineCost,
+      maintenanceCost: data.maintenanceCost ?? 0,
+      packagingCost: data.packagingCost ?? 0,
+      transportCost: data.transportCost ?? 0,
+      otherCosts: data.otherCosts,
+      operator: data.operator,
+      machineId: data.machineId,
+      machineName: data.machineName,
+      shift: data.shift,
+      notes: data.notes,
+      outputBatchNumber: data.outputBatchNumber,
     };
-    setProductionBatches((prev) => [newBatch, ...prev]);
+    completeProductionFromInput(input);
+  };
 
-    // Deduct raw material stock
-    setInventory((prev) =>
-      prev.map((i) => {
-        if (i.id === rawItem.id) {
-          const remaining = i.availableKg - data.rawMaterialQtyKg;
-          return {
-            ...i,
-            availableKg: remaining,
-            totalValue: remaining * i.unitCost,
-          };
-        }
-        return i;
-      })
-    );
-
-    // Add Finished Goods Stock
-    const finishedItemName = `${data.productName} ${data.color} Shopping Bags`;
-    const existingFG = inventory.find(
-      (i) => i.category === 'FINISHED_GOODS' && i.name.toLowerCase().includes(data.productName.toLowerCase()) && i.color === data.color
-    );
-
-    if (existingFG) {
-      setInventory((prev) =>
-        prev.map((i) => {
-          if (i.id === existingFG.id) {
-            const newQty = i.availableKg + data.finishedGoodsOutputKg;
-            return {
-              ...i,
-              availableKg: newQty,
-              totalValue: newQty * costPerKg,
-              unitCost: costPerKg,
-              lastUpdated: new Date().toISOString().split('T')[0],
-              batchNumber: data.outputBatchNumber,
-            };
-          }
-          return i;
-        })
+  const upsertProductionPlan = (
+    plan: Omit<ProductionPlan, 'id' | 'planNumber'> & { id?: string; planNumber?: string }
+  ) => {
+    if (plan.id) {
+      setProductionPlans((prev) =>
+        prev.map((p) =>
+          p.id === plan.id
+            ? {
+                ...p,
+                ...plan,
+                requiredRawMaterialQtyKg: estimateInputFromPlan(plan.plannedOutputQtyKg, plan.targetYieldPct),
+              }
+            : p
+        )
       );
-    } else {
-      const newFG: InventoryItem = {
-        id: 'inv-fg-' + Date.now(),
-        name: finishedItemName,
-        category: 'FINISHED_GOODS',
-        warehouse: 'Finished Goods Hall D',
-        availableKg: data.finishedGoodsOutputKg,
-        reservedKg: 0,
-        unitCost: costPerKg,
-        totalValue: data.finishedGoodsOutputKg * costPerKg,
-        batchNumber: data.outputBatchNumber,
-        status: 'Healthy',
-        reorderLevelKg: 400,
-        lastUpdated: new Date().toISOString().split('T')[0],
-        sourceType: data.materialSource,
-        color: data.color,
-      };
-      setInventory((prev) => [newFG, ...prev]);
+      showToast('success', 'Plan Updated', plan.planNumber || plan.id);
+      return;
     }
-
-    // Log Stock movements
-    const consumeMovement: StockMovement = {
-      id: 'sm-' + Date.now(),
-      date: new Date().toISOString().replace('T', ' ').substring(0, 16),
-      type: 'PRODUCTION_CONSUME',
-      itemId: rawItem.id,
-      itemName: rawItem.name,
-      batchNumber: rawItem.batchNumber,
-      warehouse: rawItem.warehouse,
-      qtyKg: data.rawMaterialQtyKg,
-      unitCost: rawItem.unitCost,
-      totalCost: materialCost,
-      referenceNo: data.batchNumber,
-      operator: data.operator,
-      notes: `Consumed for batch ${data.batchNumber} (${data.materialSource} source)`,
+    const planNumber = plan.planNumber || generateProductionPlanNumber(productionPlans, productionSettings);
+    const newPlan: ProductionPlan = {
+      ...(plan as ProductionPlan),
+      id: 'plan-' + Date.now(),
+      planNumber,
+      requiredRawMaterialQtyKg: estimateInputFromPlan(plan.plannedOutputQtyKg, plan.targetYieldPct),
+      status: plan.status || 'Draft',
     };
-    const outputMovement: StockMovement = {
-      id: 'sm-' + (Date.now() + 1),
-      date: new Date().toISOString().replace('T', ' ').substring(0, 16),
-      type: 'PRODUCTION_OUTPUT',
-      itemId: existingFG ? existingFG.id : 'inv-fg-new',
-      itemName: finishedItemName,
-      batchNumber: data.outputBatchNumber,
-      warehouse: 'Finished Goods Hall D',
-      qtyKg: data.finishedGoodsOutputKg,
-      unitCost: costPerKg,
-      totalCost: totalCost,
-      referenceNo: data.batchNumber,
-      operator: data.operator,
-      notes: `Finished goods manufactured: ${data.finishedGoodsOutputKg} kg`,
-    };
-    setStockMovements((prev) => [outputMovement, consumeMovement, ...prev]);
+    setProductionPlans((prev) => [newPlan, ...prev]);
+    showToast('success', 'Plan Created', planNumber);
+  };
 
-    showToast(
-      'success',
-      'Production Batch Created',
-      `Batch ${data.batchNumber} completed. Output: ${data.finishedGoodsOutputKg} kg at Rs. ${costPerKg}/kg`
+  const updateProductionPlanStatus = (planId: string, status: ProductionPlanStatus, cancelReason?: string) => {
+    setProductionPlans((prev) =>
+      prev.map((p) =>
+        p.id === planId ? { ...p, status, cancelReason: cancelReason || p.cancelReason } : p
+      )
     );
+  };
+
+  const upsertProductionOrder = (
+    order: Omit<ProductionOrder, 'id' | 'orderNumber' | 'linkedBatchIds'> & { id?: string; orderNumber?: string }
+  ) => {
+    if (order.id) {
+      setProductionOrders((prev) => prev.map((o) => (o.id === order.id ? { ...o, ...order, linkedBatchIds: o.linkedBatchIds } : o)));
+      return;
+    }
+    const orderNumber = order.orderNumber || generateProductionOrderNumber(productionOrders, productionSettings);
+    const newOrder: ProductionOrder = {
+      ...(order as ProductionOrder),
+      id: 'ord-' + Date.now(),
+      orderNumber,
+      linkedBatchIds: [],
+      status: order.status || 'Draft',
+    };
+    setProductionOrders((prev) => [newOrder, ...prev]);
+    showToast('success', 'Order Created', orderNumber);
+  };
+
+  const updateProductionOrderStatus = (orderId: string, status: ProductionOrderStatus, cancelReason?: string) => {
+    setProductionOrders((prev) =>
+      prev.map((o) => (o.id === orderId ? { ...o, status, cancelReason: cancelReason || o.cancelReason } : o))
+    );
+  };
+
+  const convertPlanToBatch = (planId: string): string => {
+    const plan = productionPlans.find((p) => p.id === planId);
+    if (!plan || plan.status !== 'Approved') {
+      showToast('error', 'Plan Not Approved', 'Only approved plans can convert to batches');
+      return '';
+    }
+    const id = saveProductionBatchDraft({
+      productName: plan.brand,
+      color: plan.color,
+      materialSource: plan.materialSource,
+      rawMaterialBatchId: '',
+      inputWarehouse: '',
+      rawMaterialQtyKg: plan.requiredRawMaterialQtyKg,
+      plannedInputQtyKg: plan.requiredRawMaterialQtyKg,
+      finishedGoodsOutputKg: 0,
+      rejectedOutputKg: 0,
+      reusableByproductKg: 0,
+      finishedGoodsWarehouse: 'Finished Goods Hall D',
+      productionDate: plan.plannedProductionDate,
+      laborCost: 0,
+      electricityCost: 0,
+      machineCost: 0,
+      maintenanceCost: 0,
+      packagingCost: 0,
+      transportCost: 0,
+      otherCosts: 0,
+      operator: plan.assignedOperator,
+      productionPlanRef: plan.planNumber,
+    });
+    if (id) {
+      updateProductionPlanStatus(planId, 'In Progress');
+      setProductionPlans((prev) => prev.map((p) => (p.id === planId ? { ...p, linkedBatchId: id } : p)));
+    }
+    return id;
+  };
+
+  const convertOrderToBatch = (orderId: string): string => {
+    const order = productionOrders.find((o) => o.id === orderId);
+    if (!order) return '';
+    const active = productionBatches.find(
+      (b) => b.productionOrderRef === order.orderNumber && b.status !== 'Completed' && b.status !== 'Cancelled'
+    );
+    if (active) {
+      showToast('error', 'Duplicate Batch', 'An active batch already exists for this order');
+      return '';
+    }
+    const id = saveProductionBatchDraft({
+      productName: order.brand,
+      color: order.color,
+      materialSource: order.materialSource,
+      rawMaterialBatchId: '',
+      inputWarehouse: '',
+      rawMaterialQtyKg: 0,
+      plannedInputQtyKg: 0,
+      finishedGoodsOutputKg: 0,
+      rejectedOutputKg: 0,
+      reusableByproductKg: 0,
+      finishedGoodsWarehouse: 'Finished Goods Hall D',
+      productionDate: order.plannedProductionDate,
+      laborCost: 0,
+      electricityCost: 0,
+      machineCost: 0,
+      maintenanceCost: 0,
+      packagingCost: 0,
+      transportCost: 0,
+      otherCosts: 0,
+      operator: productionOperators[0]?.name || 'Staff',
+      productionOrderRef: order.orderNumber,
+    });
+    if (id) {
+      setProductionOrders((prev) =>
+        prev.map((o) =>
+          o.id === orderId ? { ...o, status: 'In Progress', linkedBatchIds: [...o.linkedBatchIds, id] } : o
+        )
+      );
+    }
+    return id;
+  };
+
+  const updateProductionSettings = (settings: ProductionSettings) => {
+    setProductionSettings(settings);
+    showToast('success', 'Production Settings Saved', 'Configuration updated');
+  };
+
+  const upsertProductionMachine = (machine: ProductionMachine) => {
+    setProductionMachines((prev) => {
+      const exists = prev.some((m) => m.id === machine.id);
+      return exists ? prev.map((m) => (m.id === machine.id ? machine : m)) : [...prev, machine];
+    });
+  };
+
+  const upsertProductionOperator = (operator: ProductionOperator) => {
+    setProductionOperators((prev) => {
+      const exists = prev.some((o) => o.id === operator.id);
+      return exists ? prev.map((o) => (o.id === operator.id ? operator : o)) : [...prev, operator];
+    });
   };
 
   const buildBatchFromForm = (
@@ -1574,6 +2060,11 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
         inventory,
         stockMovements,
         productionBatches,
+        productionPlans,
+        productionOrders,
+        productionSettings,
+        productionMachines,
+        productionOperators,
         recyclingBatches,
         salesInvoices,
         purchaseBills,
@@ -1606,6 +2097,21 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
         setWarehouseStatus,
         updateInventoryModuleSettings,
         createProductionBatch,
+        saveProductionBatchDraft,
+        updateProductionBatchDraft,
+        startProductionBatch,
+        completeProductionBatch,
+        completeProductionFromInput,
+        cancelProductionBatch,
+        upsertProductionPlan,
+        updateProductionPlanStatus,
+        upsertProductionOrder,
+        updateProductionOrderStatus,
+        convertPlanToBatch,
+        convertOrderToBatch,
+        updateProductionSettings,
+        upsertProductionMachine,
+        upsertProductionOperator,
         createRecyclingBatch,
         saveRecyclingBatchDraft,
         updateRecyclingBatchDraft,

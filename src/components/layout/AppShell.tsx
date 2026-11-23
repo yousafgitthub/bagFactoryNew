@@ -24,7 +24,20 @@ import { InvMovementsView } from '../views/inventory/InvMovementsView';
 import { InvWarehousesView } from '../views/inventory/InvWarehousesView';
 import { InvReportsView } from '../views/inventory/InvReportsView';
 import { InvSettingsView } from '../views/inventory/InvSettingsView';
-import { ProductionOverviewView } from '../views/ProductionOverviewView';
+import { ProductionOverviewView } from '../views/production/ProductionOverviewView';
+import { ProductionPlanningView } from '../views/production/ProductionPlanningView';
+import { ProductionOrdersView } from '../views/production/ProductionOrdersView';
+import { ProductionCreateBatchView } from '../views/production/ProductionCreateBatchView';
+import { ProductionActiveView, ProductionCompletedView } from '../views/production/ProductionListViews';
+import {
+  ProductionConsumptionView,
+  ProductionOutputView,
+  ProductionLossView,
+  ProductionCostsView,
+  ProductionReportsView,
+  ProductionSettingsView,
+} from '../views/production/ProductionHistoryViews';
+import { ProductionBatchDetailView } from '../views/production/ProductionBatchDetailView';
 import { RecyclingOverviewView } from '../views/RecyclingOverviewView';
 import { RecyclingBatchesView } from '../views/recycling/RecyclingBatchesView';
 import { RecyclingCreateBatchView } from '../views/recycling/RecyclingCreateBatchView';
@@ -118,6 +131,30 @@ export function AppShell() {
         return <InvSettingsView />;
       case 'production':
         return <ProductionOverviewView />;
+      case 'production-planning':
+        return <ProductionPlanningView />;
+      case 'production-orders':
+        return <ProductionOrdersView />;
+      case 'production-create':
+        return <ProductionCreateBatchView />;
+      case 'production-active':
+        return <ProductionActiveView />;
+      case 'production-completed':
+        return <ProductionCompletedView />;
+      case 'production-consumption':
+        return <ProductionConsumptionView />;
+      case 'production-output':
+        return <ProductionOutputView />;
+      case 'production-loss':
+        return <ProductionLossView />;
+      case 'production-costs':
+        return <ProductionCostsView />;
+      case 'production-reports':
+        return <ProductionReportsView />;
+      case 'production-settings':
+        return <ProductionSettingsView />;
+      case 'production-batch-detail':
+        return <ProductionBatchDetailView />;
       case 'recycling':
         return <RecyclingOverviewView />;
       case 'recycling-batches':

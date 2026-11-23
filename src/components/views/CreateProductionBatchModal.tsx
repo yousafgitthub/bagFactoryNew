@@ -78,17 +78,28 @@ export function CreateProductionBatchModal({
       materialSource, // STRICT: Only NEW or RECYCLED!
       rawMaterialName: activeSelectedBatch.name,
       rawMaterialBatchId: activeSelectedBatch.id,
+      inputWarehouse: activeSelectedBatch.warehouse,
       rawMaterialQtyKg,
+      rawMaterialCostPerKg: activeSelectedBatch.unitCost,
       finishedGoodsOutputKg,
+      rejectedOutputKg: 0,
+      reusableByproductKg: 0,
       productionDate: new Date().toISOString().split('T')[0],
       laborCost,
       electricityCost,
       machineCost,
+      maintenanceCost: 0,
+      packagingCost: 0,
+      transportCost: 0,
       otherCosts,
       operator,
       status: 'Completed',
       notes: notes || `Extrusion and sealing for ${productName} ${color}`,
       outputBatchNumber: `FG-${productName.slice(0, 4).toUpperCase()}-${color.slice(0, 1).toUpperCase()}-${Math.floor(10 + Math.random() * 90)}`,
+      finishedGoodsWarehouse: 'Finished Goods Hall D',
+      rawStockDeducted: false,
+      finishedStockPosted: false,
+      timeline: [],
     });
 
     onClose();

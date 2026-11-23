@@ -50,31 +50,133 @@ export interface StockMovement {
 
 // 2. Production Types
 export type ProductionSource = 'NEW' | 'RECYCLED';
-export type ProductionStatus = 'Completed' | 'In Progress' | 'Planned';
+/** @deprecated Use ProductionBatchStatus */
+export type ProductionStatus = ProductionBatchStatus | 'Planned';
+export type ProductionBatchStatus = 'Draft' | 'In Progress' | 'Completed' | 'Cancelled';
+export type ProductionPlanStatus = 'Draft' | 'Planned' | 'Approved' | 'In Progress' | 'Completed' | 'Cancelled';
+export type ProductionOrderStatus = 'Draft' | 'Approved' | 'In Progress' | 'Completed' | 'Cancelled';
+export type ProductionPriority = 'Low' | 'Normal' | 'High' | 'Urgent';
+
+export interface ProductionBatchTimelineEvent {
+  id: string;
+  at: string;
+  label: string;
+  detail?: string;
+}
+
+export interface ProductionMachine {
+  id: string;
+  code: string;
+  name: string;
+  line: string;
+  status: 'Active' | 'Inactive';
+}
+
+export interface ProductionOperator {
+  id: string;
+  name: string;
+  employeeRef?: string;
+  status: 'Active' | 'Inactive';
+}
+
+export interface ProductionSettings {
+  batchNumberPrefix: string;
+  batchNumberNextSeq: number;
+  orderNumberPrefix: string;
+  orderNumberNextSeq: number;
+  planNumberPrefix: string;
+  planNumberNextSeq: number;
+  defaultUnit: 'kg';
+  lossWarningThresholdPct: number;
+  yieldTargetPct: number;
+  brands: string[];
+  colors: string[];
+  productVariants: { id: string; brand: string; productName: string; color: string; code: string }[];
+  shifts: string[];
+}
+
+export interface ProductionPlan {
+  id: string;
+  planNumber: string;
+  planningDate: string;
+  plannedProductionDate: string;
+  brand: string;
+  productName: string;
+  color: string;
+  plannedOutputQtyKg: number;
+  materialSource: ProductionSource;
+  requiredRawMaterialQtyKg: number;
+  targetYieldPct: number;
+  priority: ProductionPriority;
+  assignedOperator: string;
+  status: ProductionPlanStatus;
+  notes?: string;
+  linkedBatchId?: string;
+  cancelReason?: string;
+}
+
+export interface ProductionOrder {
+  id: string;
+  orderNumber: string;
+  orderDate: string;
+  plannedProductionDate: string;
+  brand: string;
+  productName: string;
+  color: string;
+  plannedQtyKg: number;
+  materialSource: ProductionSource;
+  priority: ProductionPriority;
+  status: ProductionOrderStatus;
+  notes?: string;
+  linkedBatchIds: string[];
+  cancelReason?: string;
+}
 
 export interface ProductionBatch {
   id: string;
-  batchNumber: string; // e.g. PRD-2026-089
+  batchNumber: string;
+  /** Brand line (ABHA / Crystal) — legacy field name `productName` */
   productName: 'ABHA' | 'Crystal' | string;
   color: string;
-  materialSource: ProductionSource; // STRICT: Only NEW or RECYCLED
+  productVariant?: string;
+  materialSource: ProductionSource;
   rawMaterialName: string;
   rawMaterialBatchId: string;
+  inputWarehouse: string;
   rawMaterialQtyKg: number;
+  plannedInputQtyKg?: number;
+  rawMaterialCostPerKg: number;
   finishedGoodsOutputKg: number;
-  processingLossKg: number; // rawMaterialQtyKg - finishedGoodsOutputKg
+  rejectedOutputKg: number;
+  reusableByproductKg: number;
+  processingLossKg: number;
   yieldPercentage: number;
   productionDate: string;
   laborCost: number;
   electricityCost: number;
   machineCost: number;
+  maintenanceCost: number;
+  packagingCost: number;
+  transportCost: number;
   otherCosts: number;
   totalCost: number;
   costPerKg: number;
   operator: string;
-  status: ProductionStatus;
+  machineId?: string;
+  machineName?: string;
+  shift?: string;
+  status: ProductionBatchStatus;
   notes?: string;
   outputBatchNumber: string;
+  finishedGoodsWarehouse: string;
+  productionOrderRef?: string;
+  productionPlanRef?: string;
+  rawStockDeducted: boolean;
+  finishedStockPosted: boolean;
+  timeline: ProductionBatchTimelineEvent[];
+  completedAt?: string;
+  cancelledAt?: string;
+  cancelReason?: string;
 }
 
 // 3. Recycling Types
