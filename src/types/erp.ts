@@ -78,29 +78,85 @@ export interface ProductionBatch {
 }
 
 // 3. Recycling Types
+export type RecyclingBatchStatus = 'Draft' | 'In Progress' | 'Completed' | 'Cancelled';
+
+export interface RecyclingOutputLine {
+  id: string;
+  materialName: string;
+  outputTypeId?: string;
+  outputQtyKg: number;
+  outputWarehouse: string;
+  allocatedCost: number;
+  costPerKg: number;
+  notes?: string;
+}
+
+export interface RecyclingBatchTimelineEvent {
+  id: string;
+  at: string;
+  label: string;
+  detail?: string;
+}
+
+export interface ProcessingMachine {
+  id: string;
+  code: string;
+  name: string;
+  description: string;
+  status: 'Active' | 'Inactive';
+}
+
+export interface RecyclingOperator {
+  id: string;
+  name: string;
+  employeeRef?: string;
+  status: 'Active' | 'Inactive';
+}
+
+export interface RecyclingSettings {
+  batchNumberPrefix: string;
+  batchNumberNextSeq: number;
+  lossWarningThresholdPct: number;
+  costCategories: string[];
+}
+
 export interface RecyclingBatch {
   id: string;
-  batchNumber: string; // e.g. REC-2026-042
+  batchNumber: string; // e.g. REC-2026-0001
+  batchName?: string;
   wasteInputBatchId: string;
   wasteInputName: string;
+  inputWarehouse: string;
   inputWasteQtyKg: number;
   wasteCostPerKg: number;
-  outputMaterialType: string; // CONFIGURABLE! Not hard-coded to granules
+  /** Primary / legacy single-output fields — kept in sync with `outputs` aggregates */
+  outputMaterialType: string;
   outputQtyKg: number;
+  outputs: RecyclingOutputLine[];
   processingLossKg: number;
-  yieldPercentage: number; // (outputQtyKg / inputWasteQtyKg) * 100
+  yieldPercentage: number;
   laborCost: number;
   electricityCost: number;
   machineCost: number;
+  transportCost: number;
+  maintenanceCost: number;
   otherCosts: number;
   totalProcessingCost: number;
-  totalBatchCost: number; // waste cost + processing cost
-  costPerKg: number; // totalBatchCost / outputQtyKg
+  totalBatchCost: number;
+  costPerKg: number;
   processingDate: string;
   operator: string;
-  status: 'Completed' | 'In Progress';
+  machineId?: string;
+  machineName?: string;
+  status: RecyclingBatchStatus;
   notes?: string;
   destinationWarehouse: string;
+  wasteStockDeducted: boolean;
+  outputStockPosted: boolean;
+  timeline: RecyclingBatchTimelineEvent[];
+  completedAt?: string;
+  cancelledAt?: string;
+  cancelReason?: string;
 }
 
 // 4. Sales & Invoicing Types

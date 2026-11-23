@@ -8,7 +8,8 @@
     "start": "next start -p 3000",
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
-    "test:inventory": "npx tsx src/inventory/__tests__/inventoryUtils.test.ts"
+    "test:inventory": "npx tsx src/inventory/__tests__/inventoryUtils.test.ts",
+    "test:recycling": "npx tsx src/recycling/__tests__/recyclingUtils.test.ts"
   },
   "dependencies": {
     "clsx": "^2.1.1",

@@ -26,6 +26,17 @@ import { InvReportsView } from '../views/inventory/InvReportsView';
 import { InvSettingsView } from '../views/inventory/InvSettingsView';
 import { ProductionOverviewView } from '../views/ProductionOverviewView';
 import { RecyclingOverviewView } from '../views/RecyclingOverviewView';
+import { RecyclingBatchesView } from '../views/recycling/RecyclingBatchesView';
+import { RecyclingCreateBatchView } from '../views/recycling/RecyclingCreateBatchView';
+import { RecyclingBatchDetailView } from '../views/recycling/RecyclingBatchDetailView';
+import {
+  RecyclingInputsView,
+  RecyclingOutputsView,
+  RecyclingLossView,
+  RecyclingCostsView,
+  RecyclingReportsView,
+  RecyclingSettingsView,
+} from '../views/recycling/RecyclingHistoryViews';
 import { SalesOverviewView } from '../views/SalesOverviewView';
 import { PurchasesOverviewView } from '../views/PurchasesOverviewView';
 import { CustomerManagementView } from '../views/CustomerManagementView';
@@ -109,6 +120,24 @@ export function AppShell() {
         return <ProductionOverviewView />;
       case 'recycling':
         return <RecyclingOverviewView />;
+      case 'recycling-batches':
+        return <RecyclingBatchesView />;
+      case 'recycling-create':
+        return <RecyclingCreateBatchView />;
+      case 'recycling-batch-detail':
+        return <RecyclingBatchDetailView />;
+      case 'recycling-inputs':
+        return <RecyclingInputsView />;
+      case 'recycling-outputs':
+        return <RecyclingOutputsView />;
+      case 'recycling-loss':
+        return <RecyclingLossView />;
+      case 'recycling-costs':
+        return <RecyclingCostsView />;
+      case 'recycling-reports':
+        return <RecyclingReportsView />;
+      case 'recycling-settings':
+        return <RecyclingSettingsView />;
       case 'sales':
         return <SalesOverviewView />;
       case 'purchases':

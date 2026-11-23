@@ -34,6 +34,12 @@ import {
   AlertTriangle,
   List,
   PackageMinus,
+  ListOrdered,
+  ArrowDownToLine,
+  ArrowUpFromLine,
+  Percent,
+  Coins,
+  Cog,
 } from 'lucide-react';
 
 interface NavItem {
@@ -84,14 +90,31 @@ export function Sidebar() {
     { id: 'inv-settings', label: 'Inventory Settings', icon: Settings },
   ];
 
+  const recyclingNavItems: NavItem[] = [
+    { id: 'recycling', label: 'Overview', icon: Recycle },
+    { id: 'recycling-batches', label: 'Recycling Batches', icon: ListOrdered },
+    { id: 'recycling-create', label: 'Create Batch', icon: Plus },
+    { id: 'recycling-inputs', label: 'Recycling Inputs', icon: ArrowDownToLine },
+    { id: 'recycling-outputs', label: 'Recycling Outputs', icon: ArrowUpFromLine },
+    { id: 'recycling-loss', label: 'Processing Loss', icon: Percent },
+    { id: 'recycling-costs', label: 'Recycling Costs', icon: Coins },
+    { id: 'recycling-reports', label: 'Recycling Reports', icon: BarChart3 },
+    { id: 'recycling-settings', label: 'Recycling Settings', icon: Cog },
+  ];
+
   const navGroups: NavGroup[] = [
     {
       title: 'WORKSPACE',
       items: [
         { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
         { id: 'production', label: 'Production', icon: Factory },
-        { id: 'recycling', label: 'Recycling', icon: Recycle, badgeText: 'Eco' },
       ],
+    },
+    {
+      title: 'RECYCLING MANAGEMENT',
+      items: recyclingNavItems.map((item) =>
+        item.id === 'recycling' ? { ...item, badgeText: 'Eco' } : item
+      ),
     },
     {
       title: 'INVENTORY MANAGEMENT',
@@ -179,7 +202,9 @@ export function Sidebar() {
               {group.items.map((item) => {
                 const Icon = item.icon;
                 const isActive =
-                  currentView === item.id || (item.id === 'inv-overview' && currentView === 'inventory');
+                  currentView === item.id ||
+                  (item.id === 'inv-overview' && currentView === 'inventory') ||
+                  (item.id === 'recycling-batches' && currentView === 'recycling-batch-detail');
 
                 return (
                   <button

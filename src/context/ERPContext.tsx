@@ -22,6 +22,11 @@ import {
   BankTransaction,
   FactoryDocument,
   RecyclingOutputTypeMaster,
+  RecyclingSettings,
+  ProcessingMachine,
+  RecyclingOperator,
+  RecyclingOutputLine,
+  RecyclingBatchTimelineEvent,
   WarehouseMaster,
   StockAdjustmentRecord,
   StockTransferRecord,
@@ -59,6 +64,45 @@ import {
   computeStockStatus,
   ReceiveStockInput,
 } from '../inventory/inventoryUtils';
+import {
+  DEFAULT_RECYCLING_SETTINGS,
+  INITIAL_PROCESSING_MACHINES,
+  INITIAL_RECYCLING_OPERATORS,
+} from '../data/recycling';
+import {
+  allocateOutputCosts,
+  computeRecyclingMetrics,
+  computeWasteMaterialCost,
+  generateRecyclingBatchNumber,
+  validateOutputAgainstInput,
+} from '../recycling/recyclingUtils';
+import {
+  buildRecyclingMovements,
+  deductWasteStock,
+  postRecycledOutputs,
+  restoreWasteStock,
+} from '../recycling/recyclingStock';
+
+export type RecyclingBatchFormInput = {
+  id?: string;
+  batchNumber?: string;
+  batchName?: string;
+  wasteInputBatchId: string;
+  inputWasteQtyKg: number;
+  outputs: Omit<RecyclingOutputLine, 'allocatedCost' | 'costPerKg'>[];
+  laborCost: number;
+  electricityCost: number;
+  machineCost: number;
+  transportCost: number;
+  maintenanceCost: number;
+  otherCosts: number;
+  processingDate: string;
+  operator: string;
+  machineId?: string;
+  machineName?: string;
+  notes?: string;
+  destinationWarehouse: string;
+};
 
 export type ActiveView =
   | 'login'
@@ -81,6 +125,15 @@ export type ActiveView =
   | 'inv-settings'
   | 'production'
   | 'recycling'
+  | 'recycling-batches'
+  | 'recycling-create'
+  | 'recycling-inputs'
+  | 'recycling-outputs'
+  | 'recycling-loss'
+  | 'recycling-costs'
+  | 'recycling-reports'
+  | 'recycling-settings'
+  | 'recycling-batch-detail'
   | 'sales'
   | 'purchases'
   | 'customers'
@@ -133,6 +186,9 @@ interface ERPContextType {
   bankTransactions: BankTransaction[];
   documents: FactoryDocument[];
   recyclingOutputTypes: RecyclingOutputTypeMaster[];
+  recyclingSettings: RecyclingSettings;
+  processingMachines: ProcessingMachine[];
+  recyclingOperators: RecyclingOperator[];
   warehouses: WarehouseMaster[];
   inventoryModuleSettings: InventoryModuleSettings;
   stockAdjustmentRecords: StockAdjustmentRecord[];
@@ -152,7 +208,32 @@ interface ERPContextType {
   setWarehouseStatus: (warehouseId: string, status: 'Active' | 'Inactive') => void;
   updateInventoryModuleSettings: (settings: InventoryModuleSettings) => void;
   createProductionBatch: (batchData: Omit<ProductionBatch, 'id' | 'processingLossKg' | 'yieldPercentage' | 'totalCost' | 'costPerKg'>) => void;
-  createRecyclingBatch: (batchData: Omit<RecyclingBatch, 'id' | 'processingLossKg' | 'yieldPercentage' | 'totalProcessingCost' | 'totalBatchCost' | 'costPerKg'>) => void;
+  createRecyclingBatch: (
+    batchData: Omit<
+      RecyclingBatch,
+      | 'id'
+      | 'processingLossKg'
+      | 'yieldPercentage'
+      | 'totalProcessingCost'
+      | 'totalBatchCost'
+      | 'costPerKg'
+      | 'outputQtyKg'
+      | 'outputMaterialType'
+      | 'wasteStockDeducted'
+      | 'outputStockPosted'
+      | 'timeline'
+      | 'outputs'
+    > & { outputs: Omit<RecyclingOutputLine, 'allocatedCost' | 'costPerKg'>[] }
+  ) => void;
+  saveRecyclingBatchDraft: (input: RecyclingBatchFormInput) => string;
+  updateRecyclingBatchDraft: (batchId: string, input: RecyclingBatchFormInput) => void;
+  startRecyclingBatch: (batchId: string) => void;
+  completeRecyclingBatch: (batchId: string) => void;
+  cancelRecyclingBatch: (batchId: string, reason: string) => void;
+  updateRecyclingSettings: (settings: RecyclingSettings) => void;
+  upsertProcessingMachine: (machine: ProcessingMachine) => void;
+  upsertRecyclingOperator: (operator: RecyclingOperator) => void;
+  toggleRecyclingOutputType: (id: string, active: boolean) => void;
   createSalesInvoice: (invoiceData: Omit<SalesInvoice, 'id' | 'remainingBalance' | 'paymentStatus'>) => void;
   recordCustomerPayment: (customerId: string, amount: number, paymentMethod: string, referenceNo: string, notes?: string) => void;
   createPurchaseBill: (billData: Omit<PurchaseBill, 'id' | 'remainingPayable' | 'paymentStatus'>) => void;
@@ -191,6 +272,9 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
   const [bankTransactions, setBankTransactions] = useState<BankTransaction[]>(INITIAL_BANK_TRANSACTIONS);
   const [documents, setDocuments] = useState<FactoryDocument[]>(INITIAL_DOCUMENTS);
   const [recyclingOutputTypes, setRecyclingOutputTypes] = useState<RecyclingOutputTypeMaster[]>(INITIAL_RECYCLING_OUTPUT_TYPES);
+  const [recyclingSettings, setRecyclingSettings] = useState<RecyclingSettings>(DEFAULT_RECYCLING_SETTINGS);
+  const [processingMachines, setProcessingMachines] = useState<ProcessingMachine[]>(INITIAL_PROCESSING_MACHINES);
+  const [recyclingOperators, setRecyclingOperators] = useState<RecyclingOperator[]>(INITIAL_RECYCLING_OPERATORS);
   const [warehouses, setWarehouses] = useState<WarehouseMaster[]>(INITIAL_WAREHOUSES);
   const [inventoryModuleSettings, setInventoryModuleSettings] = useState<InventoryModuleSettings>({
     brands: [...INVENTORY_BRANDS],
@@ -630,133 +714,397 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
     );
   };
 
-  // 5. Create Recycling Batch (CONFIGURABLE OUTPUT TYPE)
-  const createRecyclingBatch = (
-    data: Omit<RecyclingBatch, 'id' | 'processingLossKg' | 'yieldPercentage' | 'totalProcessingCost' | 'totalBatchCost' | 'costPerKg'>
-  ) => {
-    const wasteItem = inventory.find((i) => i.id === data.wasteInputBatchId);
+  const buildBatchFromForm = (
+    input: RecyclingBatchFormInput,
+    status: RecyclingBatch['status'],
+    flags: { wasteStockDeducted: boolean; outputStockPosted: boolean },
+    timeline: RecyclingBatchTimelineEvent[]
+  ): RecyclingBatch | null => {
+    const wasteItem = inventory.find((i) => i.id === input.wasteInputBatchId);
     if (!wasteItem) {
-      showToast('error', 'Invalid Waste Batch', 'Selected waste plastic batch not found');
+      showToast('error', 'Invalid Waste Batch', 'Only Waste Plastic inventory can be used as recycling input');
+      return null;
+    }
+    if (wasteItem.category !== 'WASTE_PLASTIC') {
+      showToast('error', 'Invalid Category', 'Recycling input must be Waste Plastic stock');
+      return null;
+    }
+
+    const validation = validateOutputAgainstInput(input.inputWasteQtyKg, input.outputs);
+    if (!validation.valid) {
+      showToast('error', 'Validation Failed', validation.message);
+      return null;
+    }
+
+    if (status !== 'Draft' && wasteItem.availableKg < input.inputWasteQtyKg) {
+      showToast('error', 'Insufficient Waste Stock', `Only ${wasteItem.availableKg} kg available in yard`);
+      return null;
+    }
+
+    const wasteMaterialCost = computeWasteMaterialCost(input.inputWasteQtyKg, wasteItem.unitCost);
+    const provisionalOutputs: RecyclingOutputLine[] = input.outputs.map((o) => ({
+      ...o,
+      allocatedCost: 0,
+      costPerKg: 0,
+    }));
+    const metrics = computeRecyclingMetrics(input.inputWasteQtyKg, provisionalOutputs, {
+      wasteMaterialCost,
+      laborCost: input.laborCost,
+      electricityCost: input.electricityCost,
+      machineCost: input.machineCost,
+      transportCost: input.transportCost,
+      maintenanceCost: input.maintenanceCost,
+      otherCosts: input.otherCosts,
+    });
+    const outputs = allocateOutputCosts(metrics.totalBatchCost, input.outputs);
+    const primaryOutput = outputs[0];
+
+    const batchNumber =
+      input.batchNumber ||
+      generateRecyclingBatchNumber(recyclingBatches, recyclingSettings);
+
+    return {
+      id: input.id || 'rec-' + Date.now(),
+      batchNumber,
+      batchName: input.batchName,
+      wasteInputBatchId: wasteItem.id,
+      wasteInputName: wasteItem.name,
+      inputWarehouse: wasteItem.warehouse,
+      inputWasteQtyKg: input.inputWasteQtyKg,
+      wasteCostPerKg: wasteItem.unitCost,
+      outputMaterialType: primaryOutput?.materialName || '',
+      outputQtyKg: metrics.totalOutputKg,
+      outputs,
+      processingLossKg: metrics.processingLossKg,
+      yieldPercentage: metrics.yieldPercentage,
+      laborCost: input.laborCost,
+      electricityCost: input.electricityCost,
+      machineCost: input.machineCost,
+      transportCost: input.transportCost,
+      maintenanceCost: input.maintenanceCost,
+      otherCosts: input.otherCosts,
+      totalProcessingCost: metrics.totalProcessingCost,
+      totalBatchCost: metrics.totalBatchCost,
+      costPerKg: metrics.blendedCostPerKg,
+      processingDate: input.processingDate,
+      operator: input.operator,
+      machineId: input.machineId,
+      machineName: input.machineName,
+      status,
+      notes: input.notes,
+      destinationWarehouse: input.destinationWarehouse || primaryOutput?.outputWarehouse || wasteItem.warehouse,
+      wasteStockDeducted: flags.wasteStockDeducted,
+      outputStockPosted: flags.outputStockPosted,
+      timeline,
+    };
+  };
+
+  const saveRecyclingBatchDraft = (input: RecyclingBatchFormInput): string => {
+    const timeline: RecyclingBatchTimelineEvent[] = [
+      {
+        id: 'tl-' + Date.now(),
+        at: new Date().toISOString(),
+        label: 'Created',
+        detail: 'Batch saved as draft — inventory not affected',
+      },
+    ];
+    const batch = buildBatchFromForm(
+      input,
+      'Draft',
+      { wasteStockDeducted: false, outputStockPosted: false },
+      timeline
+    );
+    if (!batch) return '';
+    setRecyclingBatches((prev) => [batch, ...prev]);
+    showToast('success', 'Draft Saved', `Batch ${batch.batchNumber} saved without stock impact`);
+    return batch.id;
+  };
+
+  const updateRecyclingBatchDraft = (batchId: string, input: RecyclingBatchFormInput) => {
+    const existing = recyclingBatches.find((b) => b.id === batchId);
+    if (!existing || existing.status !== 'Draft') {
+      showToast('error', 'Cannot Edit', 'Only draft batches can be edited');
       return;
     }
-    if (wasteItem.availableKg < data.inputWasteQtyKg) {
-      showToast('error', 'Insufficient Waste Stock', `Only ${wasteItem.availableKg} kg waste available`);
+    const updated = buildBatchFromForm(
+      { ...input, id: batchId, batchNumber: existing.batchNumber },
+      'Draft',
+      { wasteStockDeducted: false, outputStockPosted: false },
+      [
+        ...existing.timeline,
+        { id: 'tl-' + Date.now(), at: new Date().toISOString(), label: 'Draft updated' },
+      ]
+    );
+    if (!updated) return;
+    setRecyclingBatches((prev) => prev.map((b) => (b.id === batchId ? updated : b)));
+    showToast('success', 'Draft Updated', `Batch ${updated.batchNumber} revised`);
+  };
+
+  const startRecyclingBatch = (batchId: string) => {
+    const batch = recyclingBatches.find((b) => b.id === batchId);
+    if (!batch) return;
+    if (batch.status !== 'Draft' && batch.status !== 'In Progress') {
+      showToast('error', 'Invalid Transition', 'Only draft batches can start processing');
+      return;
+    }
+    if (batch.wasteStockDeducted) {
+      showToast('info', 'Already Started', 'Waste stock already deducted for this batch');
       return;
     }
 
-    const lossKg = Math.max(0, data.inputWasteQtyKg - data.outputQtyKg);
-    const yieldPct = Number(((data.outputQtyKg / data.inputWasteQtyKg) * 100).toFixed(2));
-    const wasteCost = data.inputWasteQtyKg * data.wasteCostPerKg;
-    const processingCost = data.laborCost + data.electricityCost + data.machineCost + data.otherCosts;
-    const totalBatchCost = wasteCost + processingCost;
-    const costPerKg = Number((totalBatchCost / data.outputQtyKg).toFixed(2));
-
-    const newRecBatch: RecyclingBatch = {
-      ...data,
-      id: 'rec-' + Date.now(),
-      processingLossKg: lossKg,
-      yieldPercentage: yieldPct,
-      totalProcessingCost: processingCost,
-      totalBatchCost: totalBatchCost,
-      costPerKg: costPerKg,
-    };
-    setRecyclingBatches((prev) => [newRecBatch, ...prev]);
-
-    // Deduct waste inventory
-    setInventory((prev) =>
-      prev.map((i) => {
-        if (i.id === wasteItem.id) {
-          const remaining = i.availableKg - data.inputWasteQtyKg;
-          return {
-            ...i,
-            availableKg: remaining,
-            totalValue: remaining * i.unitCost,
-          };
-        }
-        return i;
-      })
-    );
-
-    // Add Recycled Raw Material stock with configured output material name!
-    const existingRecycled = inventory.find(
-      (i) => i.category === 'RECYCLED_RAW' && i.name.toLowerCase() === data.outputMaterialType.toLowerCase()
-    );
-
-    if (existingRecycled) {
-      setInventory((prev) =>
-        prev.map((i) => {
-          if (i.id === existingRecycled.id) {
-            const newQty = i.availableKg + data.outputQtyKg;
-            return {
-              ...i,
-              availableKg: newQty,
-              totalValue: newQty * costPerKg,
-              unitCost: costPerKg,
-              lastUpdated: new Date().toISOString().split('T')[0],
-              batchNumber: data.batchNumber,
-            };
-          }
-          return i;
-        })
-      );
-    } else {
-      const newRecItem: InventoryItem = {
-        id: 'inv-rec-' + Date.now(),
-        name: data.outputMaterialType,
-        category: 'RECYCLED_RAW',
-        warehouse: data.destinationWarehouse,
-        availableKg: data.outputQtyKg,
-        reservedKg: 0,
-        unitCost: costPerKg,
-        totalValue: data.outputQtyKg * costPerKg,
-        supplier: 'Internal Recycling Line',
-        batchNumber: data.batchNumber,
-        status: 'Healthy',
-        reorderLevelKg: 400,
-        lastUpdated: new Date().toISOString().split('T')[0],
-        sourceType: 'RECYCLED',
-      };
-      setInventory((prev) => [newRecItem, ...prev]);
+    const wasteItem = inventory.find((i) => i.id === batch.wasteInputBatchId);
+    if (!wasteItem || wasteItem.availableKg < batch.inputWasteQtyKg) {
+      showToast('error', 'Insufficient Waste', 'Cannot start — not enough waste plastic available');
+      return;
     }
 
-    // Log movements
-    const consumeMovement: StockMovement = {
-      id: 'sm-' + Date.now(),
-      date: new Date().toISOString().replace('T', ' ').substring(0, 16),
-      type: 'RECYCLING_CONSUME',
-      itemId: wasteItem.id,
-      itemName: wasteItem.name,
-      batchNumber: wasteItem.batchNumber,
-      warehouse: wasteItem.warehouse,
-      qtyKg: data.inputWasteQtyKg,
-      unitCost: data.wasteCostPerKg,
-      totalCost: wasteCost,
-      referenceNo: data.batchNumber,
-      operator: data.operator,
-      notes: `Consumed for recycling run ${data.batchNumber}`,
-    };
-    const outputMovement: StockMovement = {
-      id: 'sm-' + (Date.now() + 1),
-      date: new Date().toISOString().replace('T', ' ').substring(0, 16),
-      type: 'RECYCLING_OUTPUT',
-      itemId: existingRecycled ? existingRecycled.id : 'inv-rec-new',
-      itemName: data.outputMaterialType,
-      batchNumber: data.batchNumber,
-      warehouse: data.destinationWarehouse,
-      qtyKg: data.outputQtyKg,
-      unitCost: costPerKg,
-      totalCost: totalBatchCost,
-      referenceNo: data.batchNumber,
-      operator: data.operator,
-      notes: `Recycled material generated: ${data.outputQtyKg} kg (${data.outputMaterialType})`,
-    };
-    setStockMovements((prev) => [outputMovement, consumeMovement, ...prev]);
+    setInventory((prev) => {
+      const next = deductWasteStock(prev, wasteItem.id, batch.inputWasteQtyKg);
+      syncWarehouseLoads(next);
+      return next;
+    });
 
+    setRecyclingBatches((prev) =>
+      prev.map((b) =>
+        b.id === batchId
+          ? {
+              ...b,
+              status: 'In Progress',
+              wasteStockDeducted: true,
+              timeline: [
+                ...b.timeline,
+                {
+                  id: 'tl-start-' + Date.now(),
+                  at: new Date().toISOString(),
+                  label: 'Processing started',
+                  detail: `${batch.inputWasteQtyKg} kg waste deducted from ${b.inputWarehouse}`,
+                },
+              ],
+            }
+          : b
+      )
+    );
+    showToast('success', 'Processing Started', `Waste deducted for ${batch.batchNumber}`);
+  };
+
+  const completeRecyclingBatch = (batchId: string) => {
+    const batch = recyclingBatches.find((b) => b.id === batchId);
+    if (!batch) return;
+    if (batch.status === 'Completed') {
+      showToast('error', 'Already Completed', 'Batch cannot be completed twice');
+      return;
+    }
+    if (batch.outputStockPosted) {
+      showToast('error', 'Already Posted', 'Output stock already posted');
+      return;
+    }
+    const totalOut = batch.outputs.reduce((a, o) => a + o.outputQtyKg, 0);
+    if (totalOut <= 0) {
+      showToast('error', 'No Output', 'Cannot complete a batch with zero output quantity');
+      return;
+    }
+
+    const wasteItem = inventory.find((i) => i.id === batch.wasteInputBatchId);
+    if (!wasteItem) return;
+
+    // If never started, deduct waste now (atomic complete from quick action)
+    if (!batch.wasteStockDeducted) {
+      if (wasteItem.availableKg < batch.inputWasteQtyKg) {
+        showToast('error', 'Insufficient Waste', 'Not enough waste plastic to complete batch');
+        return;
+      }
+      setInventory((prev) => deductWasteStock(prev, wasteItem.id, batch.inputWasteQtyKg));
+    }
+
+    setInventory((prev) => {
+      const next = postRecycledOutputs(prev, batch, batch.outputs);
+      syncWarehouseLoads(next);
+      return next;
+    });
+
+    const movements = buildRecyclingMovements(batch, wasteItem, batch.outputs, batch.operator);
+    setStockMovements((prev) => [...movements, ...prev]);
+
+    setRecyclingBatches((prev) =>
+      prev.map((b) =>
+        b.id === batchId
+          ? {
+              ...b,
+              status: 'Completed',
+              wasteStockDeducted: true,
+              outputStockPosted: true,
+              completedAt: new Date().toISOString(),
+              timeline: [
+                ...b.timeline,
+                {
+                  id: 'tl-complete-' + Date.now(),
+                  at: new Date().toISOString(),
+                  label: 'Completed',
+                  detail: 'Recycled outputs posted to inventory',
+                },
+              ],
+            }
+          : b
+      )
+    );
+    showToast(
+      'success',
+      'Batch Completed',
+      `${batch.batchNumber}: ${totalOut} kg recycled material at Rs. ${batch.costPerKg}/kg`
+    );
+  };
+
+  const cancelRecyclingBatch = (batchId: string, reason: string) => {
+    const batch = recyclingBatches.find((b) => b.id === batchId);
+    if (!batch) return;
+    if (batch.status === 'Completed') {
+      showToast('error', 'Cannot Cancel', 'Completed batches require reversal workflow — not silent delete');
+      return;
+    }
+    if (batch.outputStockPosted) {
+      showToast('error', 'Cannot Cancel', 'Output already posted');
+      return;
+    }
+
+    if (batch.wasteStockDeducted) {
+      setInventory((prev) => {
+        const next = restoreWasteStock(prev, batch.wasteInputBatchId, batch.inputWasteQtyKg);
+        syncWarehouseLoads(next);
+        return next;
+      });
+    }
+
+    setRecyclingBatches((prev) =>
+      prev.map((b) =>
+        b.id === batchId
+          ? {
+              ...b,
+              status: 'Cancelled',
+              cancelReason: reason,
+              cancelledAt: new Date().toISOString(),
+              timeline: [
+                ...b.timeline,
+                {
+                  id: 'tl-cancel-' + Date.now(),
+                  at: new Date().toISOString(),
+                  label: 'Cancelled',
+                  detail: reason,
+                },
+              ],
+            }
+          : b
+      )
+    );
+    showToast('warning', 'Batch Cancelled', batch.batchNumber);
+  };
+
+  // Quick complete: create + start + complete in one operation (global modal)
+  const createRecyclingBatch = (
+    data: Omit<
+      RecyclingBatch,
+      | 'id'
+      | 'processingLossKg'
+      | 'yieldPercentage'
+      | 'totalProcessingCost'
+      | 'totalBatchCost'
+      | 'costPerKg'
+      | 'outputQtyKg'
+      | 'outputMaterialType'
+      | 'wasteStockDeducted'
+      | 'outputStockPosted'
+      | 'timeline'
+      | 'outputs'
+    > & { outputs: Omit<RecyclingOutputLine, 'allocatedCost' | 'costPerKg'>[] }
+  ) => {
+    const formInput: RecyclingBatchFormInput = {
+      wasteInputBatchId: data.wasteInputBatchId,
+      inputWasteQtyKg: data.inputWasteQtyKg,
+      outputs: data.outputs,
+      laborCost: data.laborCost,
+      electricityCost: data.electricityCost,
+      machineCost: data.machineCost,
+      transportCost: data.transportCost ?? 0,
+      maintenanceCost: data.maintenanceCost ?? 0,
+      otherCosts: data.otherCosts,
+      processingDate: data.processingDate,
+      operator: data.operator,
+      machineId: data.machineId,
+      machineName: data.machineName,
+      notes: data.notes,
+      destinationWarehouse: data.destinationWarehouse,
+      batchName: data.batchName,
+    };
+    const batch = buildBatchFromForm(
+      formInput,
+      'In Progress',
+      { wasteStockDeducted: false, outputStockPosted: false },
+      [
+        {
+          id: 'tl-' + Date.now(),
+          at: new Date().toISOString(),
+          label: 'Created',
+          detail: 'Quick batch from modal',
+        },
+      ]
+    );
+    if (!batch) return;
+    const wasteItem = inventory.find((i) => i.id === batch.wasteInputBatchId);
+    if (!wasteItem || wasteItem.availableKg < batch.inputWasteQtyKg) return;
+
+    setInventory((prev) => {
+      let next = deductWasteStock(prev, wasteItem.id, batch.inputWasteQtyKg);
+      next = postRecycledOutputs(next, batch, batch.outputs);
+      syncWarehouseLoads(next);
+      return next;
+    });
+    const movements = buildRecyclingMovements(batch, wasteItem, batch.outputs, batch.operator);
+    setStockMovements((prev) => [...movements, ...prev]);
+
+    const completed: RecyclingBatch = {
+      ...batch,
+      status: 'Completed',
+      wasteStockDeducted: true,
+      outputStockPosted: true,
+      completedAt: new Date().toISOString(),
+      timeline: [
+        ...batch.timeline,
+        {
+          id: 'tl-complete-' + Date.now(),
+          at: new Date().toISOString(),
+          label: 'Completed',
+          detail: 'Quick complete from recycling modal',
+        },
+      ],
+    };
+    setRecyclingBatches((prev) => [completed, ...prev]);
     showToast(
       'success',
       'Recycling Batch Completed',
-      `Processed ${data.inputWasteQtyKg} kg waste ➔ ${data.outputQtyKg} kg of ${data.outputMaterialType} at Rs. ${costPerKg}/kg`
+      `${completed.batchNumber}: ${completed.outputQtyKg} kg output at Rs. ${completed.costPerKg}/kg`
     );
+  };
+
+  const updateRecyclingSettings = (settings: RecyclingSettings) => {
+    setRecyclingSettings(settings);
+    showToast('success', 'Recycling Settings Saved', 'Configuration updated');
+  };
+
+  const upsertProcessingMachine = (machine: ProcessingMachine) => {
+    setProcessingMachines((prev) => {
+      const exists = prev.some((m) => m.id === machine.id);
+      return exists ? prev.map((m) => (m.id === machine.id ? machine : m)) : [...prev, machine];
+    });
+  };
+
+  const upsertRecyclingOperator = (operator: RecyclingOperator) => {
+    setRecyclingOperators((prev) => {
+      const exists = prev.some((o) => o.id === operator.id);
+      return exists ? prev.map((o) => (o.id === operator.id ? operator : o)) : [...prev, operator];
+    });
+  };
+
+  const toggleRecyclingOutputType = (id: string, active: boolean) => {
+    setRecyclingOutputTypes((prev) => prev.map((t) => (t.id === id ? { ...t, active } : t)));
   };
 
   // 6. Create Sales Invoice (Updates Khata, Cash/Bank, and Stock)
@@ -1240,6 +1588,9 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
         bankTransactions,
         documents,
         recyclingOutputTypes,
+        recyclingSettings,
+        processingMachines,
+        recyclingOperators,
         warehouses,
         inventoryModuleSettings,
         stockAdjustmentRecords,
@@ -1256,6 +1607,15 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
         updateInventoryModuleSettings,
         createProductionBatch,
         createRecyclingBatch,
+        saveRecyclingBatchDraft,
+        updateRecyclingBatchDraft,
+        startRecyclingBatch,
+        completeRecyclingBatch,
+        cancelRecyclingBatch,
+        updateRecyclingSettings,
+        upsertProcessingMachine,
+        upsertRecyclingOperator,
+        toggleRecyclingOutputType,
         createSalesInvoice,
         recordCustomerPayment,
         createPurchaseBill,
