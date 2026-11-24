@@ -1,7 +1,8 @@
 # Phase 6 Completion Report — Purchase & Supplier Management
 
 **Repository:** https://github.com/yousafgitthub/bagFactoryNew  
-**Branch:** (see git log / PR for commit SHA)
+**Commit:** `968365f4de869a57c051e14f3886ad0caad24392`  
+**Branch:** `cursor/foundryflow-phase6-4432`
 
 ## Delivered
 
