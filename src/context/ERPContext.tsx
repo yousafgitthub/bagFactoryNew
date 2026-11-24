@@ -18,6 +18,13 @@ import {
   ProductionOrderStatus,
   RecyclingBatch,
   SalesInvoice,
+  SalesInvoiceItem,
+  SalesReturn,
+  SalesSettings,
+  CustomerPayment,
+  CustomerPaymentMethod,
+  DiscountType,
+  InvoiceStatus,
   PurchaseBill,
   PaymentStatus,
   Customer,
@@ -116,6 +123,23 @@ import {
   restoreRawMaterialStock,
   reverseFinishedGoodsOutput,
 } from '../production/productionStock';
+import { DEFAULT_SALES_SETTINGS, INITIAL_CUSTOMER_PAYMENTS, INITIAL_SALES_RETURNS } from '../data/sales';
+import {
+  computeInvoiceTotals,
+  generateInvoiceNumber,
+  normalizeLegacyInvoice,
+  refreshInvoicePaymentFields,
+  validateReturnQuantity,
+  validateSaleLines,
+} from '../sales/salesUtils';
+import {
+  buildSalesDispatchMovements,
+  buildSalesRestoreMovements,
+  buildSalesReturnMovements,
+  deductFinishedGoodsForSale,
+  postSaleableReturnStock,
+  restoreFinishedGoodsForCancel,
+} from '../sales/salesStock';
 
 export type ProductionBatchFormInput = {
   id?: string;
@@ -148,6 +172,22 @@ export type ProductionBatchFormInput = {
   outputBatchNumber?: string;
   productionOrderRef?: string;
   productionPlanRef?: string;
+};
+
+export type SalesInvoiceFormInput = {
+  id?: string;
+  invoiceNumber?: string;
+  customerId: string;
+  saleDate: string;
+  dueDate: string;
+  items: SalesInvoiceItem[];
+  discountType: DiscountType;
+  discountValue: number;
+  amountReceived: number;
+  paymentMethod?: CustomerPaymentMethod;
+  dispatchWarehouse?: string;
+  salesperson?: string;
+  notes?: string;
 };
 
 export type RecyclingBatchFormInput = {
@@ -214,6 +254,14 @@ export type ActiveView =
   | 'recycling-settings'
   | 'recycling-batch-detail'
   | 'sales'
+  | 'sales-all'
+  | 'sales-create'
+  | 'sales-returns'
+  | 'sales-payments'
+  | 'sales-outstanding'
+  | 'sales-reports'
+  | 'sales-settings'
+  | 'sales-invoice-detail'
   | 'purchases'
   | 'customers'
   | 'khata'
@@ -258,6 +306,9 @@ interface ERPContextType {
   productionOperators: ProductionOperator[];
   recyclingBatches: RecyclingBatch[];
   salesInvoices: SalesInvoice[];
+  customerPayments: CustomerPayment[];
+  salesReturns: SalesReturn[];
+  salesSettings: SalesSettings;
   purchaseBills: PurchaseBill[];
   customers: Customer[];
   suppliers: Supplier[];
@@ -333,7 +384,30 @@ interface ERPContextType {
   upsertProcessingMachine: (machine: ProcessingMachine) => void;
   upsertRecyclingOperator: (operator: RecyclingOperator) => void;
   toggleRecyclingOutputType: (id: string, active: boolean) => void;
-  createSalesInvoice: (invoiceData: Omit<SalesInvoice, 'id' | 'remainingBalance' | 'paymentStatus'>) => void;
+  createSalesInvoice: (
+    invoiceData: Omit<
+      SalesInvoice,
+      'id' | 'remainingBalance' | 'paymentStatus' | 'invoiceStatus' | 'stockDeducted' | 'taxAmount' | 'discountType'
+    > & { discountType?: DiscountType; taxAmount?: number; invoiceStatus?: InvoiceStatus }
+  ) => void;
+  saveSalesInvoiceDraft: (input: SalesInvoiceFormInput) => string;
+  updateSalesInvoiceDraft: (invoiceId: string, input: SalesInvoiceFormInput) => void;
+  confirmSalesInvoice: (invoiceId: string) => void;
+  cancelSalesInvoice: (invoiceId: string, reason: string) => void;
+  recordInvoicePayment: (
+    invoiceId: string,
+    amount: number,
+    paymentMethod: CustomerPaymentMethod,
+    paymentReference: string,
+    transactionRef?: string,
+    notes?: string
+  ) => void;
+  saveSalesReturn: (
+    payload: Omit<SalesReturn, 'id' | 'status' | 'stockRestored'> & { status?: SalesReturn['status'] }
+  ) => string;
+  updateSalesReturnStatus: (returnId: string, status: SalesReturn['status']) => void;
+  completeSalesReturn: (returnId: string) => void;
+  updateSalesSettings: (settings: SalesSettings) => void;
   recordCustomerPayment: (customerId: string, amount: number, paymentMethod: string, referenceNo: string, notes?: string) => void;
   createPurchaseBill: (billData: Omit<PurchaseBill, 'id' | 'remainingPayable' | 'paymentStatus'>) => void;
   recordSupplierPayment: (supplierId: string, amount: number, paymentAccount: string, referenceNo: string) => void;
@@ -365,7 +439,12 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
   const [productionMachines, setProductionMachines] = useState<ProductionMachine[]>(INITIAL_PRODUCTION_MACHINES);
   const [productionOperators, setProductionOperators] = useState<ProductionOperator[]>(INITIAL_PRODUCTION_OPERATORS);
   const [recyclingBatches, setRecyclingBatches] = useState<RecyclingBatch[]>(INITIAL_RECYCLING_BATCHES);
-  const [salesInvoices, setSalesInvoices] = useState<SalesInvoice[]>(INITIAL_SALES_INVOICES);
+  const [salesInvoices, setSalesInvoices] = useState<SalesInvoice[]>(() =>
+    INITIAL_SALES_INVOICES.map(normalizeLegacyInvoice)
+  );
+  const [customerPayments, setCustomerPayments] = useState<CustomerPayment[]>(INITIAL_CUSTOMER_PAYMENTS);
+  const [salesReturns, setSalesReturns] = useState<SalesReturn[]>(INITIAL_SALES_RETURNS);
+  const [salesSettings, setSalesSettings] = useState<SalesSettings>(DEFAULT_SALES_SETTINGS);
   const [purchaseBills, setPurchaseBills] = useState<PurchaseBill[]>(INITIAL_PURCHASE_BILLS);
   const [customers, setCustomers] = useState<Customer[]>(INITIAL_CUSTOMERS);
   const [suppliers, setSuppliers] = useState<Supplier[]>(INITIAL_SUPPLIERS);
@@ -1593,125 +1672,418 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
     setRecyclingOutputTypes((prev) => prev.map((t) => (t.id === id ? { ...t, active } : t)));
   };
 
-  // 6. Create Sales Invoice (Updates Khata, Cash/Bank, and Stock)
-  const createSalesInvoice = (
-    data: Omit<SalesInvoice, 'id' | 'remainingBalance' | 'paymentStatus'>
-  ) => {
-    const remainingBalance = Math.max(0, data.grandTotal - data.amountReceived);
-    const paymentStatus: PaymentStatus =
-      remainingBalance <= 0 ? 'Paid' : data.amountReceived > 0 ? 'Partial' : 'Unpaid';
-
-    const newInvoice: SalesInvoice = {
-      ...data,
-      id: 'inv-' + Date.now(),
-      remainingBalance,
-      paymentStatus,
+  const buildInvoiceFromForm = (
+    input: SalesInvoiceFormInput,
+    existing?: SalesInvoice
+  ): { invoice: Omit<SalesInvoice, 'id'>; customer: Customer } | null => {
+    const customer = customers.find((c) => c.id === input.customerId);
+    if (!customer) {
+      showToast('error', 'Customer required', 'Select a valid customer.');
+      return null;
+    }
+    const totals = computeInvoiceTotals(
+      input.items,
+      input.discountType,
+      input.discountType === 'Percent' ? input.discountValue : input.discountValue,
+      salesSettings.taxEnabled,
+      salesSettings.taxRatePct
+    );
+    const discount = totals.discount;
+    const base: Omit<SalesInvoice, 'id'> = {
+      invoiceNumber: input.invoiceNumber || existing?.invoiceNumber || generateInvoiceNumber(salesInvoices, salesSettings),
+      customerId: customer.id,
+      customerName: customer.name,
+      customerPhone: customer.phone,
+      saleDate: input.saleDate,
+      dueDate: input.dueDate,
+      items: input.items,
+      subtotal: totals.subtotal,
+      discountType: input.discountType,
+      discount,
+      discountPercent: input.discountType === 'Percent' ? input.discountValue : undefined,
+      taxAmount: totals.taxAmount,
+      grandTotal: totals.grandTotal,
+      amountReceived: input.amountReceived,
+      remainingBalance: Math.max(0, totals.grandTotal - input.amountReceived),
+      paymentStatus: 'Unpaid',
+      invoiceStatus: 'Draft',
+      stockDeducted: false,
+      dispatchWarehouse: input.dispatchWarehouse || 'Finished Goods Hall D',
+      salesperson: input.salesperson,
+      paymentMethod: input.paymentMethod,
+      notes: input.notes,
+      confirmedAt: undefined,
     };
-    setSalesInvoices((prev) => [newInvoice, ...prev]);
+    const refreshed = refreshInvoicePaymentFields({ ...base, id: 'tmp' } as SalesInvoice);
+    return {
+      invoice: { ...base, ...refreshed },
+      customer,
+    };
+  };
 
-    // Update Customer Khata
+  const postKhataForConfirm = (invoice: SalesInvoice, customerId: string) => {
     setCustomers((prev) =>
       prev.map((c) => {
-        if (c.id === data.customerId) {
+        if (c.id === customerId) {
           return {
             ...c,
-            totalSales: c.totalSales + data.grandTotal,
-            paymentsReceived: c.paymentsReceived + data.amountReceived,
-            currentBalance: c.currentBalance + remainingBalance,
+            totalSales: c.totalSales + invoice.grandTotal,
+            paymentsReceived: c.paymentsReceived + invoice.amountReceived,
+            currentBalance: c.currentBalance + invoice.remainingBalance,
           };
         }
         return c;
       })
     );
-
-    // Add Khata Entries
-    const existingLedger = customerKhata[data.customerId] || [];
+    const existingLedger = customerKhata[customerId] || [];
     const lastRunning = existingLedger.length > 0 ? existingLedger[existingLedger.length - 1].runningBalance : 0;
-    const invoiceDebit = lastRunning + data.grandTotal;
-
+    const invoiceDebit = lastRunning + invoice.grandTotal;
     const invoiceEntry: KhataEntry = {
       id: 'k-' + Date.now(),
-      date: data.saleDate,
-      referenceNo: data.invoiceNumber,
-      description: `Sales Invoice ${data.invoiceNumber} - ${data.items.map((i) => `${i.productName} (${i.qtyKg}kg)`).join(', ')}`,
+      date: invoice.saleDate,
+      referenceNo: invoice.invoiceNumber,
+      description: `Sales Invoice ${invoice.invoiceNumber} - ${invoice.items.map((i) => `${i.productName} (${i.qtyKg}kg)`).join(', ')}`,
       type: 'INVOICE',
-      debit: data.grandTotal,
+      debit: invoice.grandTotal,
       credit: 0,
       runningBalance: invoiceDebit,
     };
-
     let updatedLedger = [...existingLedger, invoiceEntry];
-
-    if (data.amountReceived > 0) {
-      const paymentEntry: KhataEntry = {
+    if (invoice.amountReceived > 0) {
+      updatedLedger.push({
         id: 'k-' + (Date.now() + 1),
-        date: data.saleDate,
-        referenceNo: 'RCP-' + data.invoiceNumber,
-        description: `Payment received against ${data.invoiceNumber} (${data.paymentMethod || 'Cash'})`,
+        date: invoice.saleDate,
+        referenceNo: 'RCP-' + invoice.invoiceNumber,
+        description: `Payment received against ${invoice.invoiceNumber} (${invoice.paymentMethod || 'Cash'})`,
         type: 'PAYMENT',
         debit: 0,
-        credit: data.amountReceived,
-        runningBalance: invoiceDebit - data.amountReceived,
-      };
-      updatedLedger.push(paymentEntry);
-
-      // Increase Cash or Bank Account
-      if (data.paymentMethod === 'Cash') {
-        setAccounts((prev) =>
-          prev.map((a) => (a.accountType === 'Cash' ? { ...a, currentBalance: a.currentBalance + data.amountReceived } : a))
-        );
-      } else {
-        setAccounts((prev) =>
-          prev.map((a) => (a.accountType === 'Bank' ? { ...a, currentBalance: a.currentBalance + data.amountReceived } : a))
-        );
-      }
+        credit: invoice.amountReceived,
+        runningBalance: invoiceDebit - invoice.amountReceived,
+      });
+      const targetType = invoice.paymentMethod === 'Cash' ? 'Cash' : 'Bank';
+      setAccounts((prev) =>
+        prev.map((a) =>
+          a.accountType === targetType ? { ...a, currentBalance: a.currentBalance + invoice.amountReceived } : a
+        )
+      );
+      setCustomerPayments((prev) => [
+        {
+          id: 'pay-' + Date.now(),
+          paymentReference: 'RCP-' + invoice.invoiceNumber,
+          paymentDate: invoice.saleDate,
+          customerId: invoice.customerId,
+          customerName: invoice.customerName,
+          invoiceId: invoice.id,
+          invoiceNumber: invoice.invoiceNumber,
+          amount: invoice.amountReceived,
+          paymentMethod: invoice.paymentMethod || 'Cash',
+        },
+        ...prev,
+      ]);
     }
+    setCustomerKhata((prev) => ({ ...prev, [customerId]: updatedLedger }));
+  };
 
+  const applyConfirmStock = (invoice: SalesInvoice) => {
+    const validation = validateSaleLines(invoice.items, inventory, 'Confirmed');
+    if (!validation.valid) {
+      showToast('error', 'Stock validation failed', validation.message);
+      return false;
+    }
+    setInventory((prev) => {
+      const next = deductFinishedGoodsForSale(prev, invoice.items, invoice.dispatchWarehouse);
+      syncWarehouseLoads(next);
+      return next;
+    });
+    const moves = buildSalesDispatchMovements(
+      invoice,
+      invoice.items,
+      inventory,
+      currentUser?.name || 'Sales Staff'
+    );
+    setStockMovements((prev) => [...moves, ...prev]);
+    return true;
+  };
+
+  const saveSalesInvoiceDraft = (input: SalesInvoiceFormInput): string => {
+    const validation = validateSaleLines(input.items, inventory, 'Draft');
+    if (!validation.valid) {
+      showToast('error', 'Cannot save draft', validation.message);
+      return '';
+    }
+    const built = buildInvoiceFromForm(input);
+    if (!built) return '';
+    const id = input.id || 'inv-' + Date.now();
+    const invoice: SalesInvoice = { ...built.invoice, id, invoiceStatus: 'Draft', stockDeducted: false };
+    setSalesInvoices((prev) => {
+      const exists = prev.some((i) => i.id === id);
+      if (exists) return prev.map((i) => (i.id === id ? { ...invoice, invoiceStatus: 'Draft', stockDeducted: false } : i));
+      return [invoice, ...prev];
+    });
+    showToast('success', 'Draft saved', `Invoice ${invoice.invoiceNumber} saved as draft (no stock movement).`);
+    return id;
+  };
+
+  const updateSalesInvoiceDraft = (invoiceId: string, input: SalesInvoiceFormInput) => {
+    const existing = salesInvoices.find((i) => i.id === invoiceId);
+    if (!existing || existing.invoiceStatus !== 'Draft') {
+      showToast('error', 'Update blocked', 'Only draft invoices can be edited.');
+      return;
+    }
+    saveSalesInvoiceDraft({ ...input, id: invoiceId, invoiceNumber: existing.invoiceNumber });
+  };
+
+  const confirmSalesInvoice = (invoiceId: string) => {
+    const invoice = salesInvoices.find((i) => i.id === invoiceId);
+    if (!invoice) return;
+    if (invoice.invoiceStatus === 'Cancelled') {
+      showToast('error', 'Cannot confirm', 'Cancelled invoices cannot be confirmed.');
+      return;
+    }
+    if (invoice.stockDeducted) {
+      showToast('info', 'Already confirmed', 'Stock was already deducted for this invoice.');
+      return;
+    }
+    const validation = validateSaleLines(invoice.items, inventory, 'Confirmed');
+    if (!validation.valid) {
+      showToast('error', 'Confirm failed', validation.message);
+      return;
+    }
+    if (!applyConfirmStock(invoice)) return;
+    const refreshed = refreshInvoicePaymentFields({ ...invoice, invoiceStatus: 'Confirmed' });
+    const confirmed: SalesInvoice = {
+      ...invoice,
+      ...refreshed,
+      stockDeducted: true,
+      confirmedAt: new Date().toISOString(),
+    };
+    setSalesInvoices((prev) => prev.map((i) => (i.id === invoiceId ? confirmed : i)));
+    if (invoice.invoiceStatus === 'Draft') {
+      postKhataForConfirm(confirmed, invoice.customerId);
+    }
+    setSalesSettings((s) => ({
+      ...s,
+      invoiceNumberNextSeq: s.invoiceNumberNextSeq + 1,
+    }));
+    showToast('success', 'Invoice confirmed', `${confirmed.invoiceNumber} posted. Finished goods reduced once.`);
+  };
+
+  const cancelSalesInvoice = (invoiceId: string, reason: string) => {
+    const invoice = salesInvoices.find((i) => i.id === invoiceId);
+    if (!invoice || invoice.invoiceStatus === 'Cancelled') return;
+    if (invoice.stockDeducted) {
+      setInventory((prev) => {
+        const next = restoreFinishedGoodsForCancel(prev, invoice.items, invoice.dispatchWarehouse);
+        syncWarehouseLoads(next);
+        return next;
+      });
+      const moves = buildSalesRestoreMovements(
+        invoice,
+        invoice.items,
+        inventory,
+        currentUser?.name || 'Sales Staff'
+      );
+      setStockMovements((prev) => [...moves, ...prev]);
+    }
+    setSalesInvoices((prev) =>
+      prev.map((i) =>
+        i.id === invoiceId
+          ? {
+              ...i,
+              invoiceStatus: 'Cancelled',
+              cancelReason: reason,
+              cancelledAt: new Date().toISOString(),
+              stockDeducted: false,
+            }
+          : i
+      )
+    );
+    showToast('success', 'Invoice cancelled', reason);
+  };
+
+  const createSalesInvoice = (
+    data: Omit<
+      SalesInvoice,
+      'id' | 'remainingBalance' | 'paymentStatus' | 'invoiceStatus' | 'stockDeducted' | 'taxAmount' | 'discountType'
+    > & { discountType?: DiscountType; taxAmount?: number; invoiceStatus?: InvoiceStatus }
+  ) => {
+    const discountType = data.discountType || 'Fixed';
+    const id = saveSalesInvoiceDraft({
+      customerId: data.customerId,
+      saleDate: data.saleDate,
+      dueDate: data.dueDate,
+      items: data.items,
+      discountType,
+      discountValue: discountType === 'Percent' ? data.discountPercent || 0 : data.discount,
+      amountReceived: data.amountReceived,
+      paymentMethod: data.paymentMethod,
+      dispatchWarehouse: data.dispatchWarehouse,
+      salesperson: data.salesperson,
+      notes: data.notes,
+      invoiceNumber: data.invoiceNumber,
+    });
+    if (!id) return;
+    if (data.invoiceStatus === 'Draft') return;
+    confirmSalesInvoice(id);
+  };
+
+  const recordInvoicePayment = (
+    invoiceId: string,
+    amount: number,
+    paymentMethod: CustomerPaymentMethod,
+    paymentReference: string,
+    transactionRef?: string,
+    notes?: string
+  ) => {
+    if (amount <= 0) {
+      showToast('error', 'Invalid payment', 'Amount must be greater than zero.');
+      return;
+    }
+    const invoice = salesInvoices.find((i) => i.id === invoiceId);
+    if (!invoice || invoice.invoiceStatus === 'Draft' || invoice.invoiceStatus === 'Cancelled') {
+      showToast('error', 'Payment blocked', 'Confirm the invoice before recording payments.');
+      return;
+    }
+    if (amount > invoice.remainingBalance + 0.01) {
+      showToast('error', 'Exceeds balance', 'Payment cannot exceed remaining invoice balance.');
+      return;
+    }
+    const dup = customerPayments.some(
+      (p) => p.paymentReference === paymentReference && p.invoiceId === invoiceId
+    );
+    if (dup) {
+      showToast('error', 'Duplicate payment', 'This payment reference was already recorded.');
+      return;
+    }
+    const updatedReceived = invoice.amountReceived + amount;
+    const refreshed = refreshInvoicePaymentFields({ ...invoice, amountReceived: updatedReceived });
+    setSalesInvoices((prev) => prev.map((i) => (i.id === invoiceId ? { ...i, ...refreshed, amountReceived: updatedReceived } : i)));
+    setCustomerPayments((prev) => [
+      {
+        id: 'pay-' + Date.now(),
+        paymentReference,
+        paymentDate: new Date().toISOString().split('T')[0],
+        customerId: invoice.customerId,
+        customerName: invoice.customerName,
+        invoiceId,
+        invoiceNumber: invoice.invoiceNumber,
+        amount,
+        paymentMethod,
+        transactionRef,
+        notes,
+      },
+      ...prev,
+    ]);
+    setCustomers((prev) =>
+      prev.map((c) =>
+        c.id === invoice.customerId
+          ? {
+              ...c,
+              paymentsReceived: c.paymentsReceived + amount,
+              currentBalance: Math.max(0, c.currentBalance - amount),
+            }
+          : c
+      )
+    );
+    const existingLedger = customerKhata[invoice.customerId] || [];
+    const lastRunning = existingLedger.length > 0 ? existingLedger[existingLedger.length - 1].runningBalance : 0;
     setCustomerKhata((prev) => ({
       ...prev,
-      [data.customerId]: updatedLedger,
+      [invoice.customerId]: [
+        ...existingLedger,
+        {
+          id: 'k-' + Date.now(),
+          date: new Date().toISOString().split('T')[0],
+          referenceNo: paymentReference,
+          description: `Payment against ${invoice.invoiceNumber} via ${paymentMethod}`,
+          type: 'PAYMENT',
+          debit: 0,
+          credit: amount,
+          runningBalance: Math.max(0, lastRunning - amount),
+          notes,
+        },
+      ],
     }));
-
-    // Deduct Finished Goods Stock
-    data.items.forEach((item) => {
-      setInventory((prev) =>
-        prev.map((inv) => {
-          if (inv.category === 'FINISHED_GOODS' && inv.name.includes(item.productName)) {
-            const rem = Math.max(0, inv.availableKg - item.qtyKg);
-            return {
-              ...inv,
-              availableKg: rem,
-              totalValue: rem * inv.unitCost,
-            };
-          }
-          return inv;
-        })
-      );
-
-      // Stock movement out
-      const outMv: StockMovement = {
-        id: 'sm-' + Math.random().toString(36).substr(2, 9),
-        date: data.saleDate + ' 10:00',
-        type: 'OUT',
-        itemId: 'fg-item',
-        itemName: item.productName,
-        batchNumber: item.batchNumber || 'FG-DISP',
-        warehouse: 'Finished Goods Hall D',
-        qtyKg: item.qtyKg,
-        unitCost: item.ratePerKg,
-        totalCost: item.totalAmount,
-        referenceNo: data.invoiceNumber,
-        operator: currentUser?.name || 'Sales Staff',
-        notes: `Dispatched to ${data.customerName}`,
-      };
-      setStockMovements((prev) => [outMv, ...prev]);
-    });
-
-    showToast(
-      'success',
-      'Sales Invoice Created',
-      `Invoice ${data.invoiceNumber} recorded for Rs. ${data.grandTotal.toLocaleString()}. Balance: Rs. ${remainingBalance.toLocaleString()}`
+    const targetType = paymentMethod === 'Cash' ? 'Cash' : 'Bank';
+    setAccounts((prev) =>
+      prev.map((a) => (a.accountType === targetType ? { ...a, currentBalance: a.currentBalance + amount } : a))
     );
+    showToast('success', 'Payment recorded', `Rs. ${amount.toLocaleString()} applied to ${invoice.invoiceNumber}`);
+  };
+
+  const saveSalesReturn = (
+    payload: Omit<SalesReturn, 'id' | 'status' | 'stockRestored'> & { status?: SalesReturn['status'] }
+  ): string => {
+    const invoice = salesInvoices.find((i) => i.id === payload.invoiceId);
+    if (!invoice || (invoice.invoiceStatus !== 'Confirmed' && invoice.invoiceStatus !== 'Completed')) {
+      showToast('error', 'Return blocked', 'Returns require a confirmed invoice.');
+      return '';
+    }
+    for (const item of payload.items) {
+      const check = validateReturnQuantity(invoice, item.invoiceItemId, item.qtyReturnedKg, salesReturns);
+      if (!check.valid) {
+        showToast('error', 'Invalid return qty', check.message);
+        return '';
+      }
+    }
+    const id = 'sret-' + Date.now();
+    const entry: SalesReturn = {
+      ...payload,
+      id,
+      status: payload.status || 'Draft',
+      stockRestored: false,
+    };
+    setSalesReturns((prev) => [entry, ...prev]);
+    showToast('success', 'Return saved', entry.returnReference);
+    return id;
+  };
+
+  const updateSalesReturnStatus = (returnId: string, status: SalesReturn['status']) => {
+    setSalesReturns((prev) => prev.map((r) => (r.id === returnId ? { ...r, status } : r)));
+  };
+
+  const completeSalesReturn = (returnId: string) => {
+    const ret = salesReturns.find((r) => r.id === returnId);
+    if (!ret || ret.status === 'Completed') return;
+    const invoice = salesInvoices.find((i) => i.id === ret.invoiceId);
+    if (!invoice) return;
+    let warehouse = invoice.dispatchWarehouse || 'Finished Goods Hall D';
+    setInventory((prev) => {
+      let next = prev;
+      ret.items.forEach((item) => {
+        if (item.condition === 'Saleable') {
+          next = postSaleableReturnStock(next, item, warehouse);
+        }
+      });
+      syncWarehouseLoads(next);
+      return next;
+    });
+    const newMovements = ret.items
+      .map((item) => buildSalesReturnMovements(ret.returnReference, item, warehouse, currentUser?.name || 'Sales Staff'))
+      .filter(Boolean) as StockMovement[];
+    if (newMovements.length) setStockMovements((prev) => [...newMovements, ...prev]);
+    setSalesInvoices((prev) =>
+      prev.map((inv) => {
+        if (inv.id !== ret.invoiceId) return inv;
+        const items = inv.items.map((line) => {
+          const match = ret.items.find((ri) => ri.invoiceItemId === line.id);
+          if (!match) return line;
+          return { ...line, returnedQtyKg: (line.returnedQtyKg || 0) + match.qtyReturnedKg };
+        });
+        const amountReceived = Math.max(0, inv.amountReceived - ret.financialCredit);
+        const refreshed = refreshInvoicePaymentFields({ ...inv, items, amountReceived });
+        return { ...inv, items, amountReceived, ...refreshed };
+      })
+    );
+    setSalesReturns((prev) =>
+      prev.map((r) => (r.id === returnId ? { ...r, status: 'Completed', stockRestored: true } : r))
+    );
+    showToast('success', 'Return completed', 'Saleable stock restored; damaged items excluded from FG.');
+  };
+
+  const updateSalesSettings = (settings: SalesSettings) => {
+    setSalesSettings(settings);
+    showToast('success', 'Sales settings saved', 'Invoice and tax preferences updated.');
   };
 
   // 7. Record Customer Payment in Khata
@@ -2067,6 +2439,9 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
         productionOperators,
         recyclingBatches,
         salesInvoices,
+        customerPayments,
+        salesReturns,
+        salesSettings,
         purchaseBills,
         customers,
         suppliers,
@@ -2123,6 +2498,15 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
         upsertRecyclingOperator,
         toggleRecyclingOutputType,
         createSalesInvoice,
+        saveSalesInvoiceDraft,
+        updateSalesInvoiceDraft,
+        confirmSalesInvoice,
+        cancelSalesInvoice,
+        recordInvoicePayment,
+        saveSalesReturn,
+        updateSalesReturnStatus,
+        completeSalesReturn,
+        updateSalesSettings,
         recordCustomerPayment,
         createPurchaseBill,
         recordSupplierPayment,

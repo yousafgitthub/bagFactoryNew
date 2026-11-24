@@ -8,6 +8,7 @@ import { Plus, Trash2, Printer, CheckCircle2, Building2, Download } from 'lucide
 import { SalesInvoice } from '../../types/erp';
 import { Badge } from '../common/Badge';
 import { generateInvoicePDF } from '../../utils/exportUtils';
+import { getBrandFromProductName } from '../../sales/salesUtils';
 
 interface CreateSalesInvoiceModalProps {
   isOpen: boolean;
@@ -32,11 +33,14 @@ export function CreateSalesInvoiceModal({ isOpen, onClose }: CreateSalesInvoiceM
   const [items, setItems] = useState([
     {
       id: 'item-1',
-      productName: 'ABHA White Shopping Bags (Standard)',
+      inventoryItemId: finishedGoods[0]?.id,
+      productName: finishedGoods[0]?.name || 'ABHA White Shopping Bags (Standard)',
+      brand: getBrandFromProductName(finishedGoods[0]?.name || 'ABHA'),
       color: 'White',
       qtyKg: 100,
       ratePerKg: 400,
       totalAmount: 40000,
+      batchNumber: finishedGoods[0]?.batchNumber,
     },
   ]);
 
@@ -61,11 +65,14 @@ export function CreateSalesInvoiceModal({ isOpen, onClose }: CreateSalesInvoiceM
       ...items,
       {
         id: 'item-' + Date.now(),
+        inventoryItemId: finishedGoods[0]?.id,
         productName: finishedGoods[0]?.name || 'Crystal White Bags',
+        brand: getBrandFromProductName(finishedGoods[0]?.name || 'Crystal'),
         color: 'White',
         qtyKg: 50,
         ratePerKg: 580,
         totalAmount: 50 * 580,
+        batchNumber: finishedGoods[0]?.batchNumber,
       },
     ]);
   };
@@ -89,9 +96,11 @@ export function CreateSalesInvoiceModal({ isOpen, onClose }: CreateSalesInvoiceM
       customerName: selectedCustomer.name,
       saleDate,
       dueDate,
-      items,
+      items: items.map((i) => ({ ...i, brand: i.brand || getBrandFromProductName(i.productName) })),
       subtotal,
+      discountType: 'Fixed',
       discount,
+      taxAmount: 0,
       grandTotal,
       amountReceived,
       paymentMethod,

@@ -51,6 +51,11 @@ import {
   RecyclingSettingsView,
 } from '../views/recycling/RecyclingHistoryViews';
 import { SalesOverviewView } from '../views/SalesOverviewView';
+import { SalesAllInvoicesView, SalesOutstandingView, SalesPaymentsView, SalesReturnsView } from '../views/sales/SalesListViews';
+import { SalesCreateInvoiceView } from '../views/sales/SalesCreateInvoiceView';
+import { SalesInvoiceDetailView } from '../views/sales/SalesInvoiceDetailView';
+import { SalesReportsView } from '../views/sales/SalesReportsView';
+import { SalesSettingsView } from '../views/sales/SalesSettingsView';
 import { PurchasesOverviewView } from '../views/PurchasesOverviewView';
 import { CustomerManagementView } from '../views/CustomerManagementView';
 import { CustomerKhataView } from '../views/CustomerKhataView';
@@ -177,6 +182,22 @@ export function AppShell() {
         return <RecyclingSettingsView />;
       case 'sales':
         return <SalesOverviewView />;
+      case 'sales-all':
+        return <SalesAllInvoicesView />;
+      case 'sales-create':
+        return <SalesCreateInvoiceView />;
+      case 'sales-returns':
+        return <SalesReturnsView />;
+      case 'sales-payments':
+        return <SalesPaymentsView />;
+      case 'sales-outstanding':
+        return <SalesOutstandingView />;
+      case 'sales-reports':
+        return <SalesReportsView />;
+      case 'sales-settings':
+        return <SalesSettingsView />;
+      case 'sales-invoice-detail':
+        return <SalesInvoiceDetailView />;
       case 'purchases':
         return <PurchasesOverviewView />;
       case 'customers':

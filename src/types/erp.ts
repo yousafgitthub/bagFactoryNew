@@ -35,7 +35,18 @@ export interface InventoryItem {
 export interface StockMovement {
   id: string;
   date: string;
-  type: 'IN' | 'OUT' | 'TRANSFER' | 'ADJUSTMENT' | 'PRODUCTION_CONSUME' | 'PRODUCTION_OUTPUT' | 'RECYCLING_CONSUME' | 'RECYCLING_OUTPUT';
+  type:
+    | 'IN'
+    | 'OUT'
+    | 'TRANSFER'
+    | 'ADJUSTMENT'
+    | 'PRODUCTION_CONSUME'
+    | 'PRODUCTION_OUTPUT'
+    | 'RECYCLING_CONSUME'
+    | 'RECYCLING_OUTPUT'
+    | 'SALES_DISPATCH'
+    | 'SALES_RETURN'
+    | 'SALES_CANCEL_RESTORE';
   itemId: string;
   itemName: string;
   batchNumber: string;
@@ -262,34 +273,118 @@ export interface RecyclingBatch {
 }
 
 // 4. Sales & Invoicing Types
-export type PaymentStatus = 'Paid' | 'Partial' | 'Unpaid';
+export type PaymentStatus = 'Paid' | 'Partial' | 'Unpaid' | 'Overdue';
+export type SalesPaymentStatus = PaymentStatus;
+export type InvoiceStatus = 'Draft' | 'Confirmed' | 'Completed' | 'Cancelled' | 'Returned';
+export type DiscountType = 'Fixed' | 'Percent';
+export type SalesReturnStatus = 'Draft' | 'Pending Inspection' | 'Approved' | 'Rejected' | 'Completed';
+export type ReturnCondition = 'Saleable' | 'Damaged' | 'Rejected';
 
 export interface SalesInvoiceItem {
   id: string;
+  inventoryItemId?: string;
   productName: string;
+  brand: string;
   color: string;
   qtyKg: number;
   ratePerKg: number;
   totalAmount: number;
   batchNumber?: string;
+  productionBatchRef?: string;
+  returnedQtyKg?: number;
 }
 
 export interface SalesInvoice {
   id: string;
-  invoiceNumber: string; // e.g. INV-1048
+  invoiceNumber: string; // e.g. INV-2026-0001
   customerId: string;
   customerName: string;
+  customerPhone?: string;
   saleDate: string;
+  dueDate: string;
   items: SalesInvoiceItem[];
   subtotal: number;
+  discountType: DiscountType;
   discount: number;
+  discountPercent?: number;
+  taxAmount: number;
   grandTotal: number;
   amountReceived: number;
   remainingBalance: number;
-  paymentStatus: PaymentStatus;
-  paymentMethod?: 'Cash' | 'Bank Transfer' | 'Cheque';
-  dueDate: string;
+  invoiceStatus: InvoiceStatus;
+  paymentStatus: SalesPaymentStatus;
+  stockDeducted: boolean;
+  dispatchWarehouse?: string;
+  salesperson?: string;
+  paymentMethod?: 'Cash' | 'Bank Transfer' | 'Cheque' | 'Other';
   notes?: string;
+  cancelReason?: string;
+  cancelledAt?: string;
+  confirmedAt?: string;
+}
+
+export type CustomerPaymentMethod = 'Cash' | 'Bank Transfer' | 'Cheque' | 'Other';
+
+export interface CustomerPayment {
+  id: string;
+  paymentReference: string;
+  paymentDate: string;
+  customerId: string;
+  customerName: string;
+  invoiceId: string;
+  invoiceNumber: string;
+  amount: number;
+  paymentMethod: CustomerPaymentMethod;
+  accountRef?: string;
+  transactionRef?: string;
+  notes?: string;
+}
+
+export interface SalesReturnItem {
+  id: string;
+  invoiceItemId: string;
+  inventoryItemId?: string;
+  productName: string;
+  brand: string;
+  color: string;
+  qtyReturnedKg: number;
+  condition: ReturnCondition;
+  batchNumber?: string;
+}
+
+export interface SalesReturn {
+  id: string;
+  returnReference: string;
+  invoiceId: string;
+  invoiceNumber: string;
+  customerId: string;
+  customerName: string;
+  returnDate: string;
+  items: SalesReturnItem[];
+  reason: string;
+  notes?: string;
+  status: SalesReturnStatus;
+  stockRestored: boolean;
+  financialCredit: number;
+}
+
+export interface SalesSettings {
+  invoiceNumberPrefix: string;
+  invoiceNumberNextSeq: number;
+  defaultPaymentTermsDays: number;
+  defaultCurrency: 'PKR';
+  defaultUnit: 'kg';
+  discountEnabled: boolean;
+  taxEnabled: boolean;
+  taxRatePct: number;
+  invoiceFooter: string;
+  factoryName: string;
+  factoryAddress: string;
+  factoryPhone: string;
+  paymentMethods: CustomerPaymentMethod[];
+  returnPolicyNote: string;
+  brands: string[];
+  colors: string[];
 }
 
 // 5. Purchases Types

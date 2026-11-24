@@ -71,7 +71,9 @@ export function Sidebar() {
 
   // Dynamic counts for badges
   const lowStockCount = inventory.filter((i) => i.status === 'Low Stock' || i.status === 'Critical').length;
-  const unpaidSalesCount = salesInvoices.filter((s) => s.paymentStatus !== 'Paid').length;
+  const unpaidSalesCount = salesInvoices.filter(
+    (s) => s.paymentStatus !== 'Paid' && s.invoiceStatus !== 'Draft' && s.invoiceStatus !== 'Cancelled'
+  ).length;
 
   const inventoryNavItems: NavItem[] = [
     { id: 'inv-overview', label: 'Overview Hub', icon: Boxes },
@@ -106,6 +108,17 @@ export function Sidebar() {
     { id: 'production-settings', label: 'Settings', icon: Cog },
   ];
 
+  const salesNavItems: NavItem[] = [
+    { id: 'sales', label: 'Overview', icon: ShoppingBag, badge: unpaidSalesCount > 0 ? unpaidSalesCount : undefined },
+    { id: 'sales-all', label: 'All Sales', icon: List },
+    { id: 'sales-create', label: 'Create Invoice', icon: Plus },
+    { id: 'sales-returns', label: 'Sales Returns', icon: ArrowDownToLine },
+    { id: 'sales-payments', label: 'Customer Payments', icon: CreditCard },
+    { id: 'sales-outstanding', label: 'Outstanding', icon: AlertTriangle },
+    { id: 'sales-reports', label: 'Sales Reports', icon: BarChart3 },
+    { id: 'sales-settings', label: 'Sales Settings', icon: Settings },
+  ];
+
   const recyclingNavItems: NavItem[] = [
     { id: 'recycling', label: 'Overview', icon: Recycle },
     { id: 'recycling-batches', label: 'Recycling Batches', icon: ListOrdered },
@@ -134,6 +147,10 @@ export function Sidebar() {
       ),
     },
     {
+      title: 'SALES MANAGEMENT',
+      items: salesNavItems,
+    },
+    {
       title: 'INVENTORY MANAGEMENT',
       items: inventoryNavItems.map((item) => {
         if (lowStockCount > 0 && (item.id === 'inv-overview' || item.id === 'inv-low-stock')) {
@@ -145,7 +162,6 @@ export function Sidebar() {
     {
       title: 'BUSINESS',
       items: [
-        { id: 'sales', label: 'Sales', icon: ShoppingBag, badge: unpaidSalesCount > 0 ? unpaidSalesCount : undefined },
         { id: 'purchases', label: 'Purchases', icon: ShoppingCart },
         { id: 'customers', label: 'Customers', icon: Users },
         { id: 'suppliers', label: 'Suppliers', icon: Truck },
