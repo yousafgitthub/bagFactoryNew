@@ -1,6 +1,6 @@
 'use client';
 
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useMemo } from 'react';
 import {
   UserProfile,
   UserRole,
@@ -26,6 +26,12 @@ import {
   DiscountType,
   InvoiceStatus,
   PurchaseBill,
+  PurchaseOrder,
+  PurchaseReceipt,
+  SupplierPaymentRecord,
+  PurchaseReturn,
+  PurchaseSettings,
+  SupplierPaymentMethod,
   PaymentStatus,
   Customer,
   Supplier,
@@ -57,7 +63,6 @@ import {
   INITIAL_PRODUCTION_BATCHES,
   INITIAL_RECYCLING_BATCHES,
   INITIAL_SALES_INVOICES,
-  INITIAL_PURCHASE_BILLS,
   INITIAL_CUSTOMER_KHATA,
   INITIAL_EXPENSES,
   INITIAL_EMPLOYEES,
@@ -68,6 +73,27 @@ import {
   INITIAL_DOCUMENTS,
   INITIAL_RECYCLING_OUTPUT_TYPES,
 } from '../data/sampleData';
+import {
+  DEFAULT_PURCHASE_SETTINGS,
+  INITIAL_PURCHASE_ORDERS,
+  INITIAL_PURCHASE_RECEIPTS,
+  INITIAL_SUPPLIER_PAYMENTS,
+  INITIAL_PURCHASE_RETURNS,
+} from '../data/purchasing';
+import {
+  buildPurchaseFromInput,
+  applyGoodsReceipt,
+  applySupplierPaymentToPurchase,
+  applyPurchaseReturn,
+  applySupplierUpsert,
+  PurchaseFormInput,
+} from './purchasingActions';
+import {
+  buildSupplierStatement,
+  computePurchasePaymentStatus,
+  purchaseBillsFromOrders,
+} from '../purchasing/purchasingUtils';
+import type { SupplierStatementEntry } from '../types/erp';
 import {
   INITIAL_WAREHOUSES,
   INVENTORY_BRANDS,
@@ -263,6 +289,18 @@ export type ActiveView =
   | 'sales-settings'
   | 'sales-invoice-detail'
   | 'purchases'
+  | 'purchases-all'
+  | 'purchases-create'
+  | 'purchases-receive'
+  | 'purchases-returns'
+  | 'purchases-payments'
+  | 'purchases-outstanding'
+  | 'purchases-reports'
+  | 'purchases-settings'
+  | 'purchases-detail'
+  | 'purchase-suppliers'
+  | 'purchase-supplier-detail'
+  | 'purchase-supplier-statement'
   | 'customers'
   | 'khata'
   | 'suppliers'
@@ -310,6 +348,11 @@ interface ERPContextType {
   salesReturns: SalesReturn[];
   salesSettings: SalesSettings;
   purchaseBills: PurchaseBill[];
+  purchaseOrders: PurchaseOrder[];
+  purchaseReceipts: PurchaseReceipt[];
+  supplierPayments: SupplierPaymentRecord[];
+  purchaseReturns: PurchaseReturn[];
+  purchaseSettings: PurchaseSettings;
   customers: Customer[];
   suppliers: Supplier[];
   customerKhata: Record<string, KhataEntry[]>;
@@ -410,6 +453,33 @@ interface ERPContextType {
   updateSalesSettings: (settings: SalesSettings) => void;
   recordCustomerPayment: (customerId: string, amount: number, paymentMethod: string, referenceNo: string, notes?: string) => void;
   createPurchaseBill: (billData: Omit<PurchaseBill, 'id' | 'remainingPayable' | 'paymentStatus'>) => void;
+  savePurchaseDraft: (input: PurchaseFormInput) => string;
+  confirmPurchaseOrder: (purchaseId: string) => void;
+  recordPurchaseReceipt: (
+    purchaseId: string,
+    lines: { purchaseItemId: string; currentReceivedQty: number }[],
+    receiptDate: string,
+    notes?: string
+  ) => void;
+  recordPurchasePayment: (
+    purchaseId: string,
+    amount: number,
+    paymentMethod: SupplierPaymentMethod,
+    paymentReference: string,
+    accountRef?: string,
+    transactionRef?: string,
+    notes?: string
+  ) => void;
+  savePurchaseReturn: (
+    purchaseId: string,
+    items: { purchaseItemId: string; returnQty: number; returnRate: number }[],
+    returnDate: string,
+    reason: string,
+    notes?: string
+  ) => string;
+  upsertSupplier: (input: Omit<Supplier, 'id' | 'code' | 'totalPurchases' | 'paymentsMade' | 'currentPayable'> & { id?: string; code?: string }) => void;
+  updatePurchaseSettings: (settings: PurchaseSettings) => void;
+  getSupplierStatement: (supplierId: string) => SupplierStatementEntry[];
   recordSupplierPayment: (supplierId: string, amount: number, paymentAccount: string, referenceNo: string) => void;
   addExpense: (expense: Omit<ExpenseRecord, 'id' | 'voucherNumber'>) => void;
   paySalary: (payment: Omit<SalaryPayment, 'id' | 'salaryId' | 'status'>) => void;
@@ -445,7 +515,12 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
   const [customerPayments, setCustomerPayments] = useState<CustomerPayment[]>(INITIAL_CUSTOMER_PAYMENTS);
   const [salesReturns, setSalesReturns] = useState<SalesReturn[]>(INITIAL_SALES_RETURNS);
   const [salesSettings, setSalesSettings] = useState<SalesSettings>(DEFAULT_SALES_SETTINGS);
-  const [purchaseBills, setPurchaseBills] = useState<PurchaseBill[]>(INITIAL_PURCHASE_BILLS);
+  const [purchaseOrders, setPurchaseOrders] = useState<PurchaseOrder[]>(INITIAL_PURCHASE_ORDERS);
+  const [purchaseReceipts, setPurchaseReceipts] = useState<PurchaseReceipt[]>(INITIAL_PURCHASE_RECEIPTS);
+  const [supplierPayments, setSupplierPayments] = useState<SupplierPaymentRecord[]>(INITIAL_SUPPLIER_PAYMENTS);
+  const [purchaseReturns, setPurchaseReturns] = useState<PurchaseReturn[]>(INITIAL_PURCHASE_RETURNS);
+  const [purchaseSettings, setPurchaseSettings] = useState<PurchaseSettings>(DEFAULT_PURCHASE_SETTINGS);
+  const purchaseBills = useMemo(() => purchaseBillsFromOrders(purchaseOrders), [purchaseOrders]);
   const [customers, setCustomers] = useState<Customer[]>(INITIAL_CUSTOMERS);
   const [suppliers, setSuppliers] = useState<Supplier[]>(INITIAL_SUPPLIERS);
   const [customerKhata, setCustomerKhata] = useState<Record<string, KhataEntry[]>>(INITIAL_CUSTOMER_KHATA);
@@ -2140,129 +2215,300 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
     showToast('success', 'Payment Recorded', `Received Rs. ${amount.toLocaleString()} from ${customer.name}`);
   };
 
-  // 8. Create Purchase Bill
-  const createPurchaseBill = (
-    data: Omit<PurchaseBill, 'id' | 'remainingPayable' | 'paymentStatus'>
-  ) => {
-    const remainingPayable = Math.max(0, data.totalAmount - data.paidAmount);
-    const paymentStatus: PaymentStatus =
-      remainingPayable <= 0 ? 'Paid' : data.paidAmount > 0 ? 'Partial' : 'Unpaid';
-
-    const newBill: PurchaseBill = {
-      ...data,
-      id: 'pur-' + Date.now(),
-      remainingPayable,
-      paymentStatus,
-    };
-    setPurchaseBills((prev) => [newBill, ...prev]);
-
-    // Update supplier payable
+  const refreshSupplierLedger = (supplierId: string) => {
     setSuppliers((prev) =>
       prev.map((s) => {
-        if (s.id === data.supplierId) {
-          return {
-            ...s,
-            totalPurchases: s.totalPurchases + data.totalAmount,
-            paymentsMade: s.paymentsMade + data.paidAmount,
-            currentPayable: s.currentPayable + remainingPayable,
-          };
-        }
-        return s;
+        if (s.id !== supplierId) return s;
+        const totalPurchases = purchaseOrders
+          .filter((p) => p.supplierId === supplierId && p.documentStatus !== 'Draft' && p.documentStatus !== 'Cancelled')
+          .reduce((a, p) => a + p.netTotal, 0);
+        const paymentsMade = supplierPayments
+          .filter((p) => p.supplierId === supplierId)
+          .reduce((a, p) => a + p.amount, 0);
+        const credits = purchaseReturns
+          .filter((r) => r.supplierId === supplierId && r.status === 'Completed')
+          .reduce((a, r) => a + r.payableCredit, 0);
+        return {
+          ...s,
+          totalPurchases,
+          paymentsMade,
+          currentPayable: Math.max(0, s.openingBalance + totalPurchases - paymentsMade - credits),
+        };
       })
     );
+  };
 
-    // Increase stock in corresponding category!
-    let targetCat: 'NEW_BRANDED' | 'WASTE_PLASTIC' | 'FINISHED_GOODS' =
-      data.category === 'WASTE_PLASTIC' ? 'WASTE_PLASTIC' : 'NEW_BRANDED';
-
-    const existingMat = inventory.find(
-      (i) => i.name.toLowerCase() === data.materialName.toLowerCase() && i.warehouse === data.warehouse
-    );
-
-    if (existingMat) {
-      setInventory((prev) =>
-        prev.map((i) => {
-          if (i.id === existingMat.id) {
-            const newQty = i.availableKg + data.quantityKg;
-            return {
-              ...i,
-              availableKg: newQty,
-              unitCost: data.ratePerKg,
-              totalValue: newQty * data.ratePerKg,
-              lastUpdated: data.purchaseDate,
-            };
-          }
-          return i;
-        })
-      );
-    } else {
-      const newStockItem: InventoryItem = {
-        id: 'inv-mat-' + Date.now(),
-        name: data.materialName,
-        category: targetCat,
-        warehouse: data.warehouse,
-        availableKg: data.quantityKg,
-        reservedKg: 0,
-        unitCost: data.ratePerKg,
-        totalValue: data.quantityKg * data.ratePerKg,
-        supplier: data.supplierName,
-        batchNumber: 'PUR-' + Date.now().toString().slice(-4),
-        status: 'Healthy',
-        reorderLevelKg: 500,
-        lastUpdated: data.purchaseDate,
-        sourceType: targetCat === 'WASTE_PLASTIC' ? 'PURCHASED' : 'NEW',
-      };
-      setInventory((prev) => [newStockItem, ...prev]);
+  const savePurchaseDraft = (input: PurchaseFormInput): string => {
+    const built = buildPurchaseFromInput(input, suppliers, purchaseOrders, purchaseSettings);
+    if ('error' in built) {
+      showToast('error', 'Purchase Not Saved', built.error);
+      return '';
     }
+    const docStatus = input.documentStatus ?? ('Draft' as const);
+    const po = { ...built, documentStatus: docStatus };
+    setPurchaseOrders((prev) => [po, ...prev]);
+    if (docStatus !== 'Draft') refreshSupplierLedger(po.supplierId);
+    showToast('success', docStatus === 'Draft' ? 'Purchase Draft Saved' : 'Purchase Saved', po.purchaseNumber);
+    return po.id;
+  };
 
-    // Deduct cash/bank if payment was made
+  const confirmPurchaseOrder = (purchaseId: string) => {
+    const po = purchaseOrders.find((p) => p.id === purchaseId);
+    if (!po || po.documentStatus !== 'Draft') return;
+    const updated: PurchaseOrder = {
+      ...po,
+      documentStatus: 'Ordered',
+      paymentStatus: computePurchasePaymentStatus(po.netTotal, po.amountPaid, po.paymentDueDate),
+    };
+    setPurchaseOrders((prev) => prev.map((p) => (p.id === purchaseId ? updated : p)));
+    refreshSupplierLedger(po.supplierId);
+    showToast('success', 'Purchase Confirmed', `${po.purchaseNumber} ordered (no stock until receipt).`);
+  };
+
+  const recordPurchaseReceipt = (
+    purchaseId: string,
+    lines: { purchaseItemId: string; currentReceivedQty: number }[],
+    receiptDate: string,
+    notes?: string
+  ) => {
+    const po = purchaseOrders.find((p) => p.id === purchaseId);
+    if (!po || po.documentStatus === 'Draft' || po.documentStatus === 'Cancelled') {
+      showToast('error', 'Receipt Blocked', 'Confirm the purchase before goods receiving.');
+      return;
+    }
+    const result = applyGoodsReceipt(
+      po,
+      lines,
+      receiptDate,
+      po.warehouse,
+      notes,
+      inventory,
+      purchaseReceipts,
+      purchaseSettings,
+      currentUser?.name ?? 'System'
+    );
+    if (result.error) {
+      showToast('error', 'Receipt Failed', result.error);
+      return;
+    }
+    setPurchaseOrders((prev) => prev.map((p) => (p.id === purchaseId ? result.purchase : p)));
+    setPurchaseReceipts((prev) => [result.receipt, ...prev]);
+    setInventory(result.inventory);
+    if (result.movements.length) setStockMovements((prev) => [...result.movements, ...prev]);
+    setPurchaseSettings((prev) => ({
+      ...prev,
+      receiptNumberNextSeq: prev.receiptNumberNextSeq + 1,
+    }));
+    refreshSupplierLedger(po.supplierId);
+    showToast('success', 'Goods Received', result.receipt.receiptNumber);
+  };
+
+  const recordPurchasePayment = (
+    purchaseId: string,
+    amount: number,
+    paymentMethod: SupplierPaymentMethod,
+    paymentReference: string,
+    accountRef?: string,
+    transactionRef?: string,
+    notes?: string
+  ) => {
+    const po = purchaseOrders.find((p) => p.id === purchaseId);
+    if (!po) return;
+    const duplicate = supplierPayments.some((p) => p.paymentReference === paymentReference);
+    if (duplicate) {
+      showToast('error', 'Duplicate Payment', 'Payment reference already used.');
+      return;
+    }
+    const result = applySupplierPaymentToPurchase(
+      po,
+      amount,
+      new Date().toISOString().split('T')[0],
+      paymentMethod,
+      paymentReference,
+      accountRef,
+      transactionRef,
+      notes
+    );
+    if (result.error) {
+      showToast('error', 'Payment Failed', result.error);
+      return;
+    }
+    setPurchaseOrders((prev) => prev.map((p) => (p.id === purchaseId ? result.purchase : p)));
+    setSupplierPayments((prev) => [result.payment, ...prev]);
+    const targetType = paymentMethod === 'Cash' ? 'Cash' : 'Bank';
+    setAccounts((prev) =>
+      prev.map((a) => (a.accountType === targetType ? { ...a, currentBalance: a.currentBalance - amount } : a))
+    );
+    refreshSupplierLedger(po.supplierId);
+    showToast('success', 'Supplier Payment Recorded', `Rs. ${amount.toLocaleString()} — ${paymentReference}`);
+  };
+
+  const savePurchaseReturn = (
+    purchaseId: string,
+    items: { purchaseItemId: string; returnQty: number; returnRate: number }[],
+    returnDate: string,
+    reason: string,
+    notes?: string
+  ): string => {
+    const po = purchaseOrders.find((p) => p.id === purchaseId);
+    if (!po) return '';
+    const result = applyPurchaseReturn(
+      po,
+      items,
+      returnDate,
+      reason,
+      purchaseReturns,
+      purchaseSettings,
+      inventory,
+      currentUser?.name ?? 'System'
+    );
+    if (result.error) {
+      showToast('error', 'Return Failed', result.error);
+      return '';
+    }
+    setPurchaseOrders((prev) => prev.map((p) => (p.id === purchaseId ? result.purchase : p)));
+    setPurchaseReturns((prev) => [...prev, { ...result.purchaseReturn, notes }]);
+    setInventory(result.inventory);
+    if (result.movements.length) setStockMovements((prev) => [...result.movements, ...prev]);
+    setPurchaseSettings((prev) => ({ ...prev, returnNumberNextSeq: prev.returnNumberNextSeq + 1 }));
+    refreshSupplierLedger(po.supplierId);
+    showToast('success', 'Purchase Return Completed', result.purchaseReturn.returnReference);
+    return result.purchaseReturn.id;
+  };
+
+  const upsertSupplier = (
+    input: Omit<Supplier, 'id' | 'code' | 'totalPurchases' | 'paymentsMade' | 'currentPayable'> & {
+      id?: string;
+      code?: string;
+    }
+  ) => {
+    const row = applySupplierUpsert(suppliers, input, purchaseSettings);
+    if (input.id) {
+      setSuppliers((prev) => prev.map((s) => (s.id === input.id ? { ...s, ...row } : s)));
+      showToast('success', 'Supplier Updated', row.name);
+    } else {
+      setSuppliers((prev) => [row, ...prev]);
+      setPurchaseSettings((prev) => ({ ...prev, supplierCodeNextSeq: prev.supplierCodeNextSeq + 1 }));
+      showToast('success', 'Supplier Added', row.code);
+    }
+  };
+
+  const updatePurchaseSettingsHandler = (settings: PurchaseSettings) => {
+    setPurchaseSettings(settings);
+    showToast('success', 'Purchase Settings Saved', 'Prefixes and defaults updated.');
+  };
+
+  const getSupplierStatement = (supplierId: string) => {
+    const supplier = suppliers.find((s) => s.id === supplierId);
+    if (!supplier) return [];
+    return buildSupplierStatement(supplier, purchaseOrders, supplierPayments, purchaseReturns);
+  };
+
+  // Legacy quick purchase — receives immediately (full qty) for backward-compatible modal
+  const createPurchaseBill = (data: Omit<PurchaseBill, 'id' | 'remainingPayable' | 'paymentStatus'>) => {
+    const category =
+      data.category === 'WASTE_PLASTIC'
+        ? 'WASTE_PLASTIC'
+        : data.category === 'NEW_BRANDED'
+          ? 'NEW_RAW_MATERIAL'
+          : 'OTHER';
+    const input: PurchaseFormInput = {
+      supplierId: data.supplierId,
+      supplierInvoiceNumber: data.documentRef,
+      purchaseDate: data.purchaseDate,
+      paymentDueDate: data.dueDate,
+      purchaseCategory: category,
+      warehouse: data.warehouse,
+      notes: data.notes,
+      discountType: 'Fixed',
+      discount: 0,
+      additionalCharges: 0,
+      documentStatus: 'Ordered',
+      items: [
+        {
+          itemName: data.materialName,
+          inventoryCategory: data.category === 'WASTE_PLASTIC' ? 'WASTE_PLASTIC' : data.category === 'NEW_BRANDED' ? 'NEW_BRANDED' : undefined,
+          orderedQty: data.quantityKg,
+          ratePerUnit: data.ratePerKg,
+          unit: 'kg',
+        },
+      ],
+    };
+    const built = buildPurchaseFromInput(input, suppliers, purchaseOrders, purchaseSettings);
+    if ('error' in built) {
+      showToast('error', 'Purchase Failed', built.error);
+      return;
+    }
+    const po: PurchaseOrder = {
+      ...built,
+      id: 'pur-' + Date.now(),
+      purchaseNumber: data.purchaseNumber,
+      amountPaid: data.paidAmount,
+      remainingPayable: Math.max(0, built.netTotal - data.paidAmount),
+      paymentStatus: computePurchasePaymentStatus(built.netTotal, data.paidAmount, data.dueDate),
+    };
+    const receiptLines = po.items.map((i) => ({ purchaseItemId: i.id, currentReceivedQty: i.orderedQty }));
+    const receiptResult = applyGoodsReceipt(
+      po,
+      receiptLines,
+      data.purchaseDate,
+      po.warehouse,
+      'Quick purchase receipt',
+      inventory,
+      purchaseReceipts,
+      purchaseSettings,
+      currentUser?.name ?? 'System'
+    );
+    let nextPo = po;
+    let nextInv = inventory;
+    let nextReceipts = purchaseReceipts;
+    let nextMovements: StockMovement[] = [];
+    if (!receiptResult.error) {
+      nextPo = receiptResult.purchase;
+      nextInv = receiptResult.inventory;
+      nextReceipts = [receiptResult.receipt, ...purchaseReceipts];
+      nextMovements = receiptResult.movements;
+    }
+    const payRef = `SPAY-Q-${Date.now().toString().slice(-4)}`;
+    let nextPayments = supplierPayments;
+    if (data.paidAmount > 0) {
+      const payResult = applySupplierPaymentToPurchase(
+        { ...nextPo, amountPaid: 0, remainingPayable: nextPo.netTotal },
+        data.paidAmount,
+        data.purchaseDate,
+        'Bank Transfer',
+        payRef,
+        'Meezan Bank — Current'
+      );
+      if (!payResult.error) {
+        nextPo = payResult.purchase;
+        nextPayments = [payResult.payment, ...supplierPayments];
+      }
+    }
+    setPurchaseOrders((prev) => [{ ...nextPo, purchaseNumber: data.purchaseNumber }, ...prev]);
+    setPurchaseReceipts(nextReceipts);
+    setInventory(nextInv);
+    if (nextMovements.length) setStockMovements((prev) => [...nextMovements, ...prev]);
+    setSupplierPayments(nextPayments);
     if (data.paidAmount > 0) {
       setAccounts((prev) =>
         prev.map((a) => (a.accountType === 'Bank' ? { ...a, currentBalance: a.currentBalance - data.paidAmount } : a))
       );
     }
-
-    showToast(
-      'success',
-      'Purchase Recorded',
-      `Bill ${data.purchaseNumber} recorded: ${data.quantityKg} kg from ${data.supplierName}`
-    );
+    refreshSupplierLedger(data.supplierId);
+    showToast('success', 'Purchase Recorded', `${data.purchaseNumber}: ${data.quantityKg} kg received`);
   };
 
-  // 9. Record Supplier Payment
-  const recordSupplierPayment = (
-    supplierId: string,
-    amount: number,
-    paymentAccount: string,
-    referenceNo: string
-  ) => {
-    const supplier = suppliers.find((s) => s.id === supplierId);
-    if (!supplier) return;
-
-    setSuppliers((prev) =>
-      prev.map((s) => {
-        if (s.id === supplierId) {
-          return {
-            ...s,
-            paymentsMade: s.paymentsMade + amount,
-            currentPayable: Math.max(0, s.currentPayable - amount),
-          };
-        }
-        return s;
-      })
+  const recordSupplierPayment = (supplierId: string, amount: number, paymentAccount: string, referenceNo: string) => {
+    const openPurchases = purchaseOrders.filter(
+      (p) => p.supplierId === supplierId && p.remainingPayable > 0 && p.documentStatus !== 'Draft' && p.documentStatus !== 'Cancelled'
     );
-
-    // Deduct Cash or Bank
-    setAccounts((prev) =>
-      prev.map((a) => {
-        if (a.name.toLowerCase().includes(paymentAccount.toLowerCase()) || a.accountType === 'Bank') {
-          return { ...a, currentBalance: a.currentBalance - amount };
-        }
-        return a;
-      })
-    );
-
-    showToast('success', 'Supplier Payment Done', `Paid Rs. ${amount.toLocaleString()} to ${supplier.name}`);
+    if (openPurchases.length === 0) {
+      showToast('error', 'No Open Purchase', 'Allocate payment against a purchase invoice first.');
+      return;
+    }
+    const po = openPurchases[0];
+    recordPurchasePayment(po.id, Math.min(amount, po.remainingPayable), 'Bank Transfer', referenceNo, paymentAccount);
   };
 
   // 10. Add Expense
@@ -2443,6 +2689,11 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
         salesReturns,
         salesSettings,
         purchaseBills,
+        purchaseOrders,
+        purchaseReceipts,
+        supplierPayments,
+        purchaseReturns,
+        purchaseSettings,
         customers,
         suppliers,
         customerKhata,
@@ -2509,6 +2760,14 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
         updateSalesSettings,
         recordCustomerPayment,
         createPurchaseBill,
+        savePurchaseDraft,
+        confirmPurchaseOrder,
+        recordPurchaseReceipt,
+        recordPurchasePayment,
+        savePurchaseReturn,
+        upsertSupplier,
+        updatePurchaseSettings: updatePurchaseSettingsHandler,
+        getSupplierStatement,
         recordSupplierPayment,
         addExpense,
         paySalary,

@@ -46,7 +46,9 @@ export interface StockMovement {
     | 'RECYCLING_OUTPUT'
     | 'SALES_DISPATCH'
     | 'SALES_RETURN'
-    | 'SALES_CANCEL_RESTORE';
+    | 'SALES_CANCEL_RESTORE'
+    | 'PURCHASE_RECEIVE'
+    | 'PURCHASE_RETURN';
   itemId: string;
   itemName: string;
   batchNumber: string;
@@ -408,6 +410,180 @@ export interface PurchaseBill {
   notes?: string;
 }
 
+export type SupplierCategory =
+  | 'New Raw Material Supplier'
+  | 'Waste Plastic Supplier'
+  | 'Spare Parts Supplier'
+  | 'Other Supplier'
+  | 'New Raw Material'
+  | 'Waste Plastic'
+  | 'Chemicals & Dyes'
+  | 'Factory Supplies';
+
+export type PurchaseCategory =
+  | 'NEW_RAW_MATERIAL'
+  | 'WASTE_PLASTIC'
+  | 'SPARE_PARTS'
+  | 'PACKAGING'
+  | 'OTHER';
+
+export type PurchaseDocumentStatus = 'Draft' | 'Ordered' | 'Partially Received' | 'Received' | 'Cancelled';
+export type PurchasePaymentStatus = 'Unpaid' | 'Partial' | 'Paid' | 'Overdue';
+export type PurchaseReturnStatus = 'Draft' | 'Pending Approval' | 'Approved' | 'Completed' | 'Rejected';
+export type SupplierPaymentMethod = 'Cash' | 'Bank Transfer' | 'Cheque' | 'Other';
+
+export interface PurchaseItem {
+  id: string;
+  itemName: string;
+  inventoryCategory?: InventoryCategory;
+  materialType?: string;
+  brand?: string;
+  orderedQty: number;
+  receivedQty: number;
+  ratePerUnit: number;
+  unit: 'kg' | 'pcs' | 'lot';
+  lineTotal: number;
+  inventoryItemId?: string;
+  notes?: string;
+}
+
+export interface PurchaseAttachment {
+  id: string;
+  fileName: string;
+  fileSize: string;
+  label: string;
+  uploadDate: string;
+  previewNote: string;
+}
+
+export interface PurchaseOrder {
+  id: string;
+  purchaseNumber: string;
+  purchaseDate: string;
+  supplierId: string;
+  supplierName: string;
+  supplierInvoiceNumber?: string;
+  purchaseCategory: PurchaseCategory;
+  warehouse: string;
+  paymentDueDate: string;
+  notes?: string;
+  items: PurchaseItem[];
+  subtotal: number;
+  discount: number;
+  discountType?: DiscountType;
+  additionalCharges: number;
+  taxAmount: number;
+  netTotal: number;
+  amountPaid: number;
+  remainingPayable: number;
+  documentStatus: PurchaseDocumentStatus;
+  paymentStatus: PurchasePaymentStatus;
+  attachments: PurchaseAttachment[];
+}
+
+export interface PurchaseReceiptItem {
+  id: string;
+  purchaseItemId: string;
+  itemName: string;
+  orderedQty: number;
+  previouslyReceivedQty: number;
+  currentReceivedQty: number;
+  remainingQty: number;
+  unit: 'kg' | 'pcs' | 'lot';
+  ratePerUnit: number;
+  inventoryCategory?: InventoryCategory;
+  inventoryItemId?: string;
+}
+
+export interface PurchaseReceipt {
+  id: string;
+  receiptNumber: string;
+  purchaseId: string;
+  purchaseNumber: string;
+  supplierId: string;
+  supplierName: string;
+  receiptDate: string;
+  warehouse: string;
+  lines: PurchaseReceiptItem[];
+  notes?: string;
+  stockPosted: boolean;
+}
+
+export interface SupplierPaymentRecord {
+  id: string;
+  paymentReference: string;
+  paymentDate: string;
+  supplierId: string;
+  supplierName: string;
+  purchaseId: string;
+  purchaseNumber: string;
+  outstandingBefore: number;
+  amount: number;
+  paymentMethod: SupplierPaymentMethod;
+  accountRef?: string;
+  transactionRef?: string;
+  notes?: string;
+}
+
+export interface PurchaseReturnItem {
+  id: string;
+  purchaseId: string;
+  purchaseItemId: string;
+  itemName: string;
+  inventoryCategory?: InventoryCategory;
+  inventoryItemId?: string;
+  returnQty: number;
+  returnRate: number;
+  returnValue: number;
+  maxReturnableQty: number;
+}
+
+export interface PurchaseReturn {
+  id: string;
+  returnReference: string;
+  purchaseId: string;
+  purchaseNumber: string;
+  supplierId: string;
+  supplierName: string;
+  returnDate: string;
+  items: PurchaseReturnItem[];
+  reason: string;
+  notes?: string;
+  status: PurchaseReturnStatus;
+  stockAdjusted: boolean;
+  payableCredit: number;
+}
+
+export interface SupplierStatementEntry {
+  id: string;
+  date: string;
+  reference: string;
+  transactionType: 'OPENING' | 'PURCHASE' | 'PAYMENT' | 'RETURN' | 'ADJUSTMENT';
+  debit: number;
+  credit: number;
+  runningBalance: number;
+  notes?: string;
+}
+
+export interface PurchaseSettings {
+  purchaseNumberPrefix: string;
+  purchaseNumberNextSeq: number;
+  supplierCodePrefix: string;
+  supplierCodeNextSeq: number;
+  receiptNumberPrefix: string;
+  receiptNumberNextSeq: number;
+  returnNumberPrefix: string;
+  returnNumberNextSeq: number;
+  defaultCurrency: 'PKR';
+  defaultUnit: 'kg';
+  defaultPaymentTermsDays: number;
+  taxEnabled: boolean;
+  taxRatePct: number;
+  paymentMethods: SupplierPaymentMethod[];
+  purchaseCategories: PurchaseCategory[];
+  additionalChargeCategories: string[];
+}
+
 // 6. Customer & Supplier Khata (Ledger)
 export interface KhataEntry {
   id: string;
@@ -441,16 +617,21 @@ export interface Supplier {
   id: string;
   code: string;
   name: string;
+  businessName?: string;
   contactPerson: string;
   phone: string;
+  whatsapp?: string;
+  email?: string;
   city: string;
   address: string;
-  category: 'New Raw Material' | 'Waste Plastic' | 'Chemicals & Dyes' | 'Factory Supplies';
+  category: SupplierCategory;
+  taxRegistrationNumber?: string;
   openingBalance: number;
   totalPurchases: number;
   paymentsMade: number;
   currentPayable: number; // Net payable: we owe supplier
   status: 'Active' | 'Inactive';
+  notes?: string;
 }
 
 // 7. Expenses

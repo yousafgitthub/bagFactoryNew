@@ -108,6 +108,19 @@ export function Sidebar() {
     { id: 'production-settings', label: 'Settings', icon: Cog },
   ];
 
+  const purchaseNavItems: NavItem[] = [
+    { id: 'purchases', label: 'Overview', icon: ShoppingCart },
+    { id: 'purchases-all', label: 'All Purchases', icon: List },
+    { id: 'purchases-create', label: 'Create Purchase', icon: Plus },
+    { id: 'purchases-receive', label: 'Goods Receiving', icon: ArrowDownToLine },
+    { id: 'purchases-returns', label: 'Purchase Returns', icon: ArrowUpFromLine },
+    { id: 'purchases-payments', label: 'Supplier Payments', icon: CreditCard },
+    { id: 'purchases-outstanding', label: 'Outstanding Payables', icon: AlertTriangle },
+    { id: 'purchase-suppliers', label: 'Supplier Management', icon: Truck },
+    { id: 'purchases-reports', label: 'Purchase Reports', icon: BarChart3 },
+    { id: 'purchases-settings', label: 'Purchase Settings', icon: Settings },
+  ];
+
   const salesNavItems: NavItem[] = [
     { id: 'sales', label: 'Overview', icon: ShoppingBag, badge: unpaidSalesCount > 0 ? unpaidSalesCount : undefined },
     { id: 'sales-all', label: 'All Sales', icon: List },
@@ -151,6 +164,10 @@ export function Sidebar() {
       items: salesNavItems,
     },
     {
+      title: 'PURCHASE MANAGEMENT',
+      items: purchaseNavItems,
+    },
+    {
       title: 'INVENTORY MANAGEMENT',
       items: inventoryNavItems.map((item) => {
         if (lowStockCount > 0 && (item.id === 'inv-overview' || item.id === 'inv-low-stock')) {
@@ -162,9 +179,8 @@ export function Sidebar() {
     {
       title: 'BUSINESS',
       items: [
-        { id: 'purchases', label: 'Purchases', icon: ShoppingCart },
         { id: 'customers', label: 'Customers', icon: Users },
-        { id: 'suppliers', label: 'Suppliers', icon: Truck },
+        { id: 'suppliers', label: 'Suppliers (Legacy)', icon: Truck },
         { id: 'khata', label: 'Khata / Ledgers', icon: BookOpen },
         { id: 'expenses', label: 'Expenses', icon: Receipt },
       ],

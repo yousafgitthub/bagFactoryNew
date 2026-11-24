@@ -11,7 +11,8 @@
     "test:inventory": "npx tsx src/inventory/__tests__/inventoryUtils.test.ts",
     "test:recycling": "npx tsx src/recycling/__tests__/recyclingUtils.test.ts",
     "test:production": "npx tsx src/production/__tests__/productionUtils.test.ts",
-    "test:sales": "npx tsx src/sales/__tests__/salesUtils.test.ts"
+    "test:sales": "npx tsx src/sales/__tests__/salesUtils.test.ts",
+    "test:purchasing": "npx tsx src/purchasing/__tests__/purchasingUtils.test.ts"
   },
   "dependencies": {
     "clsx": "^2.1.1",

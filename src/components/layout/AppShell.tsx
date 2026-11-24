@@ -57,6 +57,20 @@ import { SalesInvoiceDetailView } from '../views/sales/SalesInvoiceDetailView';
 import { SalesReportsView } from '../views/sales/SalesReportsView';
 import { SalesSettingsView } from '../views/sales/SalesSettingsView';
 import { PurchasesOverviewView } from '../views/PurchasesOverviewView';
+import { PurchasingCreateView } from '../views/purchasing/PurchasingCreateView';
+import { PurchasingDetailView } from '../views/purchasing/PurchasingDetailView';
+import { PurchasingReportsView } from '../views/purchasing/PurchasingReportsView';
+import { PurchasingSettingsView } from '../views/purchasing/PurchasingSettingsView';
+import { SupplierDetailView } from '../views/purchasing/SupplierDetailView';
+import { SupplierStatementView } from '../views/purchasing/SupplierStatementView';
+import {
+  PurchasesAllView,
+  PurchasesOutstandingView,
+  PurchasesPaymentsView,
+  PurchasesReturnsView,
+  PurchasesReceiveView,
+  PurchaseSuppliersView,
+} from '../views/purchasing/PurchasingListViews';
 import { CustomerManagementView } from '../views/CustomerManagementView';
 import { CustomerKhataView } from '../views/CustomerKhataView';
 import { SupplierManagementView } from '../views/SupplierManagementView';
@@ -200,6 +214,30 @@ export function AppShell() {
         return <SalesInvoiceDetailView />;
       case 'purchases':
         return <PurchasesOverviewView />;
+      case 'purchases-all':
+        return <PurchasesAllView />;
+      case 'purchases-create':
+        return <PurchasingCreateView />;
+      case 'purchases-receive':
+        return <PurchasesReceiveView />;
+      case 'purchases-returns':
+        return <PurchasesReturnsView />;
+      case 'purchases-payments':
+        return <PurchasesPaymentsView />;
+      case 'purchases-outstanding':
+        return <PurchasesOutstandingView />;
+      case 'purchases-reports':
+        return <PurchasingReportsView />;
+      case 'purchases-settings':
+        return <PurchasingSettingsView />;
+      case 'purchases-detail':
+        return <PurchasingDetailView />;
+      case 'purchase-suppliers':
+        return <PurchaseSuppliersView />;
+      case 'purchase-supplier-detail':
+        return <SupplierDetailView />;
+      case 'purchase-supplier-statement':
+        return <SupplierStatementView />;
       case 'customers':
         return <CustomerManagementView />;
       case 'suppliers':
