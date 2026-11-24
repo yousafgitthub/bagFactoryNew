@@ -123,7 +123,11 @@ export function PurchasingOverviewView() {
         ))}
       </div>
 
-      <div className="grid lg:grid-cols-2 gap-4">
+      <details className="rounded-xl border border-[#E2E8F0] bg-white">
+        <summary className="cursor-pointer select-none px-4 py-3 text-sm font-medium text-[#1E293B]">
+          Charts
+        </summary>
+        <div className="grid lg:grid-cols-2 gap-4 p-4 pt-0">
         <div className="bg-white border border-[#E2E8F0] rounded-xl p-4 h-64">
           <p className="text-xs font-semibold text-[#64748B] mb-2">Monthly purchase trend</p>
           <ResponsiveContainer width="100%" height="90%">
@@ -148,7 +152,8 @@ export function PurchasingOverviewView() {
             </BarChart>
           </ResponsiveContainer>
         </div>
-      </div>
+        </div>
+      </details>
 
       <div className="grid lg:grid-cols-3 gap-4">
         <div className="bg-white border border-[#E2E8F0] rounded-xl p-4 lg:col-span-2">

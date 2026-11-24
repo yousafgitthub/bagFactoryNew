@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useERP } from '../../context/ERPContext';
 import { Employee, SalaryPayment } from '../../types/erp';
 import { KPICard } from '../common/KPICard';
@@ -9,10 +9,14 @@ import { Button } from '../common/Button';
 import { Modal } from '../common/Modal';
 import { UserCheck, Wallet, Plus, AlertCircle, CheckCircle2, DollarSign } from 'lucide-react';
 
-export function EmployeeManagementView() {
+export function EmployeeManagementView({ focus = 'EMPLOYEES' }: { focus?: 'EMPLOYEES' | 'SALARIES' }) {
   const { employees, salaryPayments, paySalary, recordAdvance, searchQuery } = useERP();
 
-  const [activeTab, setActiveTab] = useState<'EMPLOYEES' | 'SALARIES'>('EMPLOYEES');
+  const [activeTab, setActiveTab] = useState<'EMPLOYEES' | 'SALARIES'>(focus);
+
+  useEffect(() => {
+    setActiveTab(focus);
+  }, [focus]);
   const [isPaySalaryOpen, setIsPaySalaryOpen] = useState(false);
   const [isAdvanceOpen, setIsAdvanceOpen] = useState(false);
   const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(null);

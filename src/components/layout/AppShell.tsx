@@ -1,9 +1,10 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useERP } from '../../context/ERPContext';
 import { Sidebar } from './Sidebar';
 import { Topbar } from './Topbar';
+import { ModuleSubnav } from './ModuleSubnav';
 import { ToastContainer } from '../common/Toast';
 
 // Views
@@ -90,6 +91,11 @@ import { CreatePurchaseModal } from '../views/CreatePurchaseModal';
 
 export function AppShell() {
   const { currentView, isSidebarCollapsed } = useERP();
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
+
+  useEffect(() => {
+    setMobileNavOpen(false);
+  }, [currentView]);
 
   // Global Quick Action Modals
   const [isQuickSaleOpen, setIsQuickSaleOpen] = useState(false);
@@ -247,8 +253,9 @@ export function AppShell() {
       case 'expenses':
         return <ExpensesManagementView />;
       case 'employees':
+        return <EmployeeManagementView focus="EMPLOYEES" />;
       case 'salaries':
-        return <EmployeeManagementView />;
+        return <EmployeeManagementView focus="SALARIES" />;
       case 'loans':
         return <LoansManagementView />;
       case 'cash-bank':
@@ -258,8 +265,9 @@ export function AppShell() {
       case 'documents':
         return <DocumentsView />;
       case 'users':
+        return <SettingsView section="users" />;
       case 'settings':
-        return <SettingsView />;
+        return <SettingsView section="general" />;
       default:
         return (
           <DashboardView
@@ -273,25 +281,32 @@ export function AppShell() {
 
   return (
     <div className="min-h-screen bg-[#F8FAFC] text-[#1E293B] flex">
-      {/* Sidebar */}
-      <Sidebar />
+      {mobileNavOpen && (
+        <button
+          type="button"
+          aria-label="Close menu"
+          className="fixed inset-0 z-30 bg-slate-900/40 lg:hidden"
+          onClick={() => setMobileNavOpen(false)}
+        />
+      )}
 
-      {/* Main Workspace Area */}
+      <Sidebar mobileOpen={mobileNavOpen} onClose={() => setMobileNavOpen(false)} />
+
       <div
-        className={`flex-1 flex flex-col min-w-0 transition-all duration-300 ${
-          isSidebarCollapsed ? 'pl-20' : 'pl-64'
+        className={`flex-1 flex flex-col min-w-0 ${
+          isSidebarCollapsed ? 'lg:pl-20' : 'lg:pl-64'
         }`}
       >
-        {/* Topbar */}
         <Topbar
+          onOpenMenu={() => setMobileNavOpen(true)}
           onOpenNewSale={() => setIsQuickSaleOpen(true)}
           onOpenNewProduction={() => setIsQuickProductionOpen(true)}
           onOpenNewRecycling={() => setIsQuickRecyclingOpen(true)}
           onOpenNewPurchase={() => setIsQuickPurchaseOpen(true)}
         />
 
-        {/* Page Content Viewport */}
-        <main className="flex-1 mt-16 p-4 sm:p-6 lg:p-8 max-w-[1700px] w-full mx-auto">
+        <main className="flex-1 mt-16 p-4 sm:p-6 lg:p-8 max-w-[1600px] w-full mx-auto">
+          <ModuleSubnav />
           {renderCurrentView()}
         </main>
       </div>

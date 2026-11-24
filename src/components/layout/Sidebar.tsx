@@ -2,6 +2,7 @@
 
 import React from 'react';
 import { useERP, ActiveView } from '../../context/ERPContext';
+import { sidebarSections } from './navigation';
 import {
   LayoutDashboard,
   Boxes,
@@ -14,7 +15,6 @@ import {
   BookOpen,
   Receipt,
   UserCheck,
-  Wallet,
   Landmark,
   CreditCard,
   BarChart3,
@@ -24,40 +24,37 @@ import {
   ChevronLeft,
   ChevronRight,
   LogOut,
-  Sparkles,
-  Layers,
-  Plus,
-  ArrowRightLeft,
-  SlidersHorizontal,
-  History,
-  Warehouse,
-  AlertTriangle,
-  List,
-  PackageMinus,
-  ListOrdered,
-  ArrowDownToLine,
-  ArrowUpFromLine,
-  Percent,
-  Coins,
-  Cog,
-  CheckCircle2,
+  X,
+  type LucideIcon,
 } from 'lucide-react';
 
-interface NavItem {
-  id: string;
-  label: string;
-  icon: any;
-  badge?: number;
-  badgeColor?: string;
-  badgeText?: string;
+const ICONS: Record<string, LucideIcon> = {
+  dashboard: LayoutDashboard,
+  sales: ShoppingBag,
+  purchases: ShoppingCart,
+  khata: BookOpen,
+  suppliers: Truck,
+  'inv-overview': Boxes,
+  production: Factory,
+  recycling: Recycle,
+  customers: Users,
+  'purchase-suppliers': Truck,
+  employees: UserCheck,
+  expenses: Receipt,
+  'cash-bank': CreditCard,
+  loans: Landmark,
+  reports: BarChart3,
+  documents: FileText,
+  users: ShieldCheck,
+  settings: Settings,
+};
+
+interface SidebarProps {
+  mobileOpen: boolean;
+  onClose: () => void;
 }
 
-interface NavGroup {
-  title: string;
-  items: NavItem[];
-}
-
-export function Sidebar() {
+export function Sidebar({ mobileOpen, onClose }: SidebarProps) {
   const {
     currentView,
     setCurrentView,
@@ -66,229 +63,85 @@ export function Sidebar() {
     inventory,
     salesInvoices,
     currentUser,
-    setCurrentUser,
   } = useERP();
 
-  // Dynamic counts for badges
   const lowStockCount = inventory.filter((i) => i.status === 'Low Stock' || i.status === 'Critical').length;
   const unpaidSalesCount = salesInvoices.filter(
     (s) => s.paymentStatus !== 'Paid' && s.invoiceStatus !== 'Draft' && s.invoiceStatus !== 'Cancelled'
   ).length;
 
-  const inventoryNavItems: NavItem[] = [
-    { id: 'inv-overview', label: 'Overview Hub', icon: Boxes },
-    { id: 'inv-all', label: 'All Inventory', icon: List },
-    { id: 'inv-low-stock', label: 'Low Stock Alerts', icon: AlertTriangle },
-    { id: 'inv-issue', label: 'Issue Stock', icon: PackageMinus },
-    { id: 'inv-new-raw', label: 'New Raw Material', icon: Layers },
-    { id: 'inv-waste', label: 'Waste Plastic', icon: Layers },
-    { id: 'inv-recycled', label: 'Recycled Material', icon: Layers },
-    { id: 'inv-finished', label: 'Finished Goods', icon: Layers },
-    { id: 'inv-receive', label: 'Receive Stock', icon: Plus },
-    { id: 'inv-transfer', label: 'Transfers', icon: ArrowRightLeft },
-    { id: 'inv-adjustments', label: 'Adjustments', icon: SlidersHorizontal },
-    { id: 'inv-movements', label: 'Movement Ledger', icon: History },
-    { id: 'inv-warehouses', label: 'Warehouses', icon: Warehouse },
-    { id: 'inv-reports', label: 'Inventory Reports', icon: BarChart3 },
-    { id: 'inv-settings', label: 'Inventory Settings', icon: Settings },
-  ];
+  const badgeFor = (id: string) => {
+    if ((id === 'inv-overview' || id === 'inventory') && lowStockCount > 0) return lowStockCount;
+    if (id === 'sales' && unpaidSalesCount > 0) return unpaidSalesCount;
+    return undefined;
+  };
 
-  const productionNavItems: NavItem[] = [
-    { id: 'production', label: 'Overview', icon: Factory },
-    { id: 'production-planning', label: 'Planning', icon: ListOrdered },
-    { id: 'production-orders', label: 'Orders', icon: List },
-    { id: 'production-create', label: 'Create Batch', icon: Plus },
-    { id: 'production-active', label: 'Active Production', icon: Sparkles },
-    { id: 'production-completed', label: 'Completed', icon: CheckCircle2 },
-    { id: 'production-consumption', label: 'Consumption', icon: PackageMinus },
-    { id: 'production-output', label: 'Output', icon: ArrowUpFromLine },
-    { id: 'production-loss', label: 'Production Loss', icon: Percent },
-    { id: 'production-costs', label: 'Costs', icon: Coins },
-    { id: 'production-reports', label: 'Reports', icon: BarChart3 },
-    { id: 'production-settings', label: 'Settings', icon: Cog },
-  ];
-
-  const purchaseNavItems: NavItem[] = [
-    { id: 'purchases', label: 'Overview', icon: ShoppingCart },
-    { id: 'purchases-all', label: 'All Purchases', icon: List },
-    { id: 'purchases-create', label: 'Create Purchase', icon: Plus },
-    { id: 'purchases-receive', label: 'Goods Receiving', icon: ArrowDownToLine },
-    { id: 'purchases-returns', label: 'Purchase Returns', icon: ArrowUpFromLine },
-    { id: 'purchases-payments', label: 'Supplier Payments', icon: CreditCard },
-    { id: 'purchases-outstanding', label: 'Outstanding Payables', icon: AlertTriangle },
-    { id: 'purchase-suppliers', label: 'Supplier Management', icon: Truck },
-    { id: 'purchases-reports', label: 'Purchase Reports', icon: BarChart3 },
-    { id: 'purchases-settings', label: 'Purchase Settings', icon: Settings },
-  ];
-
-  const salesNavItems: NavItem[] = [
-    { id: 'sales', label: 'Overview', icon: ShoppingBag, badge: unpaidSalesCount > 0 ? unpaidSalesCount : undefined },
-    { id: 'sales-all', label: 'All Sales', icon: List },
-    { id: 'sales-create', label: 'Create Invoice', icon: Plus },
-    { id: 'sales-returns', label: 'Sales Returns', icon: ArrowDownToLine },
-    { id: 'sales-payments', label: 'Customer Payments', icon: CreditCard },
-    { id: 'sales-outstanding', label: 'Outstanding', icon: AlertTriangle },
-    { id: 'sales-reports', label: 'Sales Reports', icon: BarChart3 },
-    { id: 'sales-settings', label: 'Sales Settings', icon: Settings },
-  ];
-
-  const recyclingNavItems: NavItem[] = [
-    { id: 'recycling', label: 'Overview', icon: Recycle },
-    { id: 'recycling-batches', label: 'Recycling Batches', icon: ListOrdered },
-    { id: 'recycling-create', label: 'Create Batch', icon: Plus },
-    { id: 'recycling-inputs', label: 'Recycling Inputs', icon: ArrowDownToLine },
-    { id: 'recycling-outputs', label: 'Recycling Outputs', icon: ArrowUpFromLine },
-    { id: 'recycling-loss', label: 'Processing Loss', icon: Percent },
-    { id: 'recycling-costs', label: 'Recycling Costs', icon: Coins },
-    { id: 'recycling-reports', label: 'Recycling Reports', icon: BarChart3 },
-    { id: 'recycling-settings', label: 'Recycling Settings', icon: Cog },
-  ];
-
-  const navGroups: NavGroup[] = [
-    {
-      title: 'WORKSPACE',
-      items: [{ id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard }],
-    },
-    {
-      title: 'PRODUCTION MANAGEMENT',
-      items: productionNavItems,
-    },
-    {
-      title: 'RECYCLING MANAGEMENT',
-      items: recyclingNavItems.map((item) =>
-        item.id === 'recycling' ? { ...item, badgeText: 'Eco' } : item
-      ),
-    },
-    {
-      title: 'SALES MANAGEMENT',
-      items: salesNavItems,
-    },
-    {
-      title: 'PURCHASE MANAGEMENT',
-      items: purchaseNavItems,
-    },
-    {
-      title: 'INVENTORY MANAGEMENT',
-      items: inventoryNavItems.map((item) => {
-        if (lowStockCount > 0 && (item.id === 'inv-overview' || item.id === 'inv-low-stock')) {
-          return { ...item, badge: lowStockCount, badgeColor: 'bg-amber-500' };
-        }
-        return item;
-      }),
-    },
-    {
-      title: 'BUSINESS',
-      items: [
-        { id: 'customers', label: 'Customers', icon: Users },
-        { id: 'suppliers', label: 'Suppliers (Legacy)', icon: Truck },
-        { id: 'khata', label: 'Khata / Ledgers', icon: BookOpen },
-        { id: 'expenses', label: 'Expenses', icon: Receipt },
-      ],
-    },
-    {
-      title: 'MANAGEMENT',
-      items: [
-        { id: 'employees', label: 'Employees', icon: UserCheck },
-        { id: 'salaries', label: 'Salaries', icon: Wallet },
-        { id: 'loans', label: 'Loans', icon: Landmark },
-        { id: 'cash-bank', label: 'Cash & Bank', icon: CreditCard },
-        { id: 'reports', label: 'Reports', icon: BarChart3 },
-      ],
-    },
-    {
-      title: 'SYSTEM',
-      items: [
-        { id: 'documents', label: 'Documents', icon: FileText },
-        { id: 'users', label: 'Users & Roles', icon: ShieldCheck },
-        { id: 'settings', label: 'Settings', icon: Settings },
-      ],
-    },
-  ];
+  const openView = (id: ActiveView) => {
+    setCurrentView(id);
+    onClose();
+  };
 
   return (
     <aside
-      className={`fixed top-0 left-0 bottom-0 z-40 bg-[#142238] text-slate-300 flex flex-col transition-all duration-300 ease-in-out border-r border-[#1b2c47] ${
-        isSidebarCollapsed ? 'w-20' : 'w-64'
-      }`}
+      className={`fixed top-0 left-0 bottom-0 z-40 bg-[#142238] text-slate-300 flex flex-col border-r border-[#1b2c47] transition-transform duration-200 w-64 ${
+        mobileOpen ? 'translate-x-0' : '-translate-x-full'
+      } lg:translate-x-0 ${isSidebarCollapsed ? 'lg:w-20' : 'lg:w-64'}`}
     >
-      {/* Brand Header */}
-      <div className="h-16 flex items-center justify-between px-4 border-b border-[#1b2c47] bg-[#0c1524]/60">
+      <div className="h-16 flex items-center justify-between px-4 border-b border-[#1b2c47]">
         <div className="flex items-center gap-3 overflow-hidden">
-          <div className="w-9 h-9 rounded-lg bg-gradient-to-tr from-[#2563EB] to-blue-400 flex items-center justify-center text-white font-bold text-lg shadow-md flex-shrink-0">
-            <Factory className="w-5 h-5 text-white" />
+          <div className="w-9 h-9 rounded-lg bg-[#2563EB] flex items-center justify-center text-white flex-shrink-0">
+            <Factory className="w-5 h-5" />
           </div>
-          {!isSidebarCollapsed && (
-            <div className="flex flex-col min-w-0">
-              <span className="font-bold text-base text-white tracking-tight leading-none flex items-center gap-1.5">
-                BagFactory <span className="text-[10px] bg-blue-600/30 text-blue-300 px-1.5 py-0.5 rounded font-medium border border-blue-500/30">ERP</span>
-              </span>
-              <span className="text-[11px] text-slate-400 mt-1 truncate">Shopping Bag Mfg.</span>
-            </div>
-          )}
+          <div className={`min-w-0 ${isSidebarCollapsed ? 'lg:hidden' : ''}`}>
+            <p className="font-semibold text-sm text-white leading-tight">Bag Factory</p>
+            <p className="text-[11px] text-slate-400 truncate">Shop & production</p>
+          </div>
         </div>
         <button
+          type="button"
+          onClick={onClose}
+          className="lg:hidden text-slate-400 hover:text-white p-1 rounded-md"
+          aria-label="Close menu"
+        >
+          <X className="w-4 h-4" />
+        </button>
+        <button
+          type="button"
           onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
-          className="text-slate-400 hover:text-white p-1 rounded-md hover:bg-slate-800 transition-colors hidden lg:block"
+          className="text-slate-400 hover:text-white p-1 rounded-md hover:bg-slate-800 hidden lg:block"
           title={isSidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
         >
           {isSidebarCollapsed ? <ChevronRight className="w-4 h-4" /> : <ChevronLeft className="w-4 h-4" />}
         </button>
       </div>
 
-      {/* Navigation Scroll Area */}
-      <div className="flex-1 overflow-y-auto py-4 px-3 space-y-6 scrollbar-thin scrollbar-thumb-slate-700">
-        {navGroups.map((group) => (
-          <div key={group.title} className="space-y-1">
-            {!isSidebarCollapsed ? (
-              <p className="px-3 text-[10px] font-semibold text-slate-400 tracking-wider uppercase">
-                {group.title}
-              </p>
-            ) : (
-              <div className="h-2" />
-            )}
-
+      <nav className="flex-1 overflow-y-auto py-4 px-3 space-y-5">
+        {sidebarSections.map((section) => (
+          <div key={section.title}>
+            <p className={`px-3 mb-1 text-[11px] font-medium text-slate-500 ${isSidebarCollapsed ? 'lg:hidden' : ''}`}>
+              {section.title}
+            </p>
             <div className="space-y-0.5">
-              {group.items.map((item) => {
-                const Icon = item.icon;
-                const isActive =
-                  currentView === item.id ||
-                  (item.id === 'inv-overview' && currentView === 'inventory') ||
-                  (item.id === 'recycling-batches' && currentView === 'recycling-batch-detail');
-
+              {section.items.map((item) => {
+                const Icon = ICONS[item.id] ?? LayoutDashboard;
+                const active = item.isActive(currentView);
+                const badge = badgeFor(item.id);
                 return (
                   <button
                     key={item.id}
-                    onClick={() => setCurrentView(item.id as ActiveView)}
+                    type="button"
+                    onClick={() => openView(item.id)}
                     title={isSidebarCollapsed ? item.label : undefined}
-                    className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-all group relative ${
-                      isActive
-                        ? 'bg-[#2563EB] text-white shadow-sm font-semibold'
-                        : 'text-slate-300 hover:bg-[#1b2c47] hover:text-white'
-                    } ${isSidebarCollapsed ? 'justify-center px-0' : ''}`}
+                    className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors ${
+                      active ? 'bg-[#2563EB] text-white font-medium' : 'text-slate-300 hover:bg-[#1b2c47] hover:text-white'
+                    } ${isSidebarCollapsed ? 'lg:justify-center lg:px-0' : ''}`}
                   >
-                    <Icon className={`w-4 h-4 flex-shrink-0 ${isActive ? 'text-white' : 'text-slate-400 group-hover:text-white'}`} />
-
-                    {!isSidebarCollapsed && (
-                      <span className="flex-1 text-left truncate">{item.label}</span>
-                    )}
-
-                    {!isSidebarCollapsed && item.badge !== undefined && (
-                      <span className={`text-[10px] font-bold px-1.5 py-0.2 rounded-full text-white ${item.badgeColor || 'bg-blue-500'}`}>
-                        {item.badge}
+                    <Icon className={`w-4 h-4 flex-shrink-0 ${active ? 'text-white' : 'text-slate-400'}`} />
+                    <span className={`flex-1 text-left truncate ${isSidebarCollapsed ? 'lg:hidden' : ''}`}>{item.label}</span>
+                    {badge !== undefined && (
+                      <span className={`text-[10px] font-semibold min-w-[1.25rem] text-center px-1.5 py-0.5 rounded-full bg-white/15 ${isSidebarCollapsed ? 'lg:hidden' : ''}`}>
+                        {badge}
                       </span>
-                    )}
-
-                    {!isSidebarCollapsed && item.badgeText && (
-                      <span className="text-[9px] font-bold px-1.5 py-0.5 rounded uppercase tracking-wider bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
-                        {item.badgeText}
-                      </span>
-                    )}
-
-                    {/* Tooltip for collapsed mode */}
-                    {isSidebarCollapsed && (
-                      <div className="absolute left-full ml-3 px-2.5 py-1 bg-[#0c1524] text-white text-xs rounded-md shadow-lg opacity-0 pointer-events-none group-hover:opacity-100 transition-opacity z-50 whitespace-nowrap border border-slate-700">
-                        {item.label}
-                      </div>
                     )}
                   </button>
                 );
@@ -296,39 +149,37 @@ export function Sidebar() {
             </div>
           </div>
         ))}
-      </div>
+      </nav>
 
-      {/* User Footer & Status */}
-      <div className="p-3 border-t border-[#1b2c47] bg-[#0c1524]/40">
-        {!isSidebarCollapsed ? (
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2.5 min-w-0">
-              <div className="w-8 h-8 rounded-full bg-slate-700 flex items-center justify-center text-white font-medium text-xs flex-shrink-0 border border-slate-600">
-                {currentUser?.name.charAt(0) || 'U'}
-              </div>
-              <div className="min-w-0">
-                <p className="text-xs font-semibold text-white truncate">{currentUser?.name}</p>
-                <p className="text-[10px] text-slate-400 capitalize truncate">
-                  {currentUser?.role.replace('_', ' ')}
-                </p>
-              </div>
+      <div className="p-3 border-t border-[#1b2c47]">
+        <div className={`flex items-center justify-between gap-2 ${isSidebarCollapsed ? 'lg:hidden' : ''}`}>
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div className="w-8 h-8 rounded-full bg-slate-700 flex items-center justify-center text-white text-xs flex-shrink-0">
+              {currentUser?.name.charAt(0) || 'U'}
             </div>
-            <button
-              onClick={() => setCurrentView('login')}
-              title="Sign out / Switch user"
-              className="p-1.5 text-slate-400 hover:text-rose-400 hover:bg-slate-800 rounded-md transition-colors"
-            >
-              <LogOut className="w-4 h-4" />
-            </button>
+            <div className="min-w-0">
+              <p className="text-xs font-semibold text-white truncate">{currentUser?.name}</p>
+              <p className="text-[10px] text-slate-400 capitalize truncate">{currentUser?.role.replace('_', ' ')}</p>
+            </div>
           </div>
-        ) : (
-          <div className="flex justify-center">
+          <button
+            type="button"
+            onClick={() => openView('login')}
+            title="Sign out"
+            className="p-1.5 text-slate-400 hover:text-rose-300 rounded-md"
+          >
+            <LogOut className="w-4 h-4" />
+          </button>
+        </div>
+        {isSidebarCollapsed && (
+          <div className="hidden lg:flex justify-center">
             <button
-              onClick={() => setCurrentView('login')}
-              title="Sign out / Switch user"
-              className="w-8 h-8 rounded-full bg-slate-700 flex items-center justify-center text-white text-xs hover:bg-rose-900 transition-colors"
+              type="button"
+              onClick={() => openView('login')}
+              title="Sign out"
+              className="w-8 h-8 rounded-full bg-slate-700 flex items-center justify-center text-slate-300"
             >
-              <LogOut className="w-3.5 h-3.5 text-slate-300" />
+              <LogOut className="w-3.5 h-3.5" />
             </button>
           </div>
         )}

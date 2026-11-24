@@ -137,7 +137,11 @@ export function ProductionOverviewView() {
         </div>
       </div>
 
-      <div className="grid lg:grid-cols-2 gap-4">
+      <details className="rounded-xl border border-[#E2E8F0] bg-white">
+        <summary className="cursor-pointer select-none px-4 py-3 text-sm font-medium text-[#1E293B]">
+          Charts
+        </summary>
+        <div className="grid lg:grid-cols-2 gap-4 p-4 pt-0">
         <ChartCard title="Monthly production trend (kg)">
           <ResponsiveContainer width="100%" height={220}>
             <LineChart data={monthlyTrend}>
@@ -205,7 +209,8 @@ export function ProductionOverviewView() {
             </BarChart>
           </ResponsiveContainer>
         </ChartCard>
-      </div>
+        </div>
+      </details>
 
       <Section title="Recent production activity">
         <div className="bg-white border rounded-xl overflow-hidden">

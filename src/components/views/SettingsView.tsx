@@ -1,15 +1,21 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useERP } from '../../context/ERPContext';
 import { Button } from '../common/Button';
 import { Badge } from '../common/Badge';
 import { Building2, Settings, Shield, Recycle, Boxes, Plus, CheckCircle2 } from 'lucide-react';
 import { Modal } from '../common/Modal';
 
-export function SettingsView() {
+export function SettingsView({ section = 'general' }: { section?: 'general' | 'users' }) {
   const { recyclingOutputTypes, addRecyclingOutputType } = useERP();
-  const [activeTab, setActiveTab] = useState<'PROFILE' | 'PRODUCTS' | 'RECYCLING' | 'ROLES'>('PROFILE');
+  const [activeTab, setActiveTab] = useState<'PROFILE' | 'PRODUCTS' | 'RECYCLING' | 'ROLES'>(
+    section === 'users' ? 'ROLES' : 'PROFILE'
+  );
+
+  useEffect(() => {
+    setActiveTab(section === 'users' ? 'ROLES' : 'PROFILE');
+  }, [section]);
 
   const [isAddOutputOpen, setIsAddOutputOpen] = useState(false);
   const [newTypeName, setNewTypeName] = useState('');
@@ -28,18 +34,18 @@ export function SettingsView() {
     <div className="space-y-6 pb-12">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h2 className="text-xl font-bold text-[#1E293B] tracking-tight">Factory Settings & Master Data</h2>
-          <p className="text-xs text-[#64748B]">
-            Configure company identity, product catalogue, configurable recycling outputs, and role permissions
+          <h2 className="text-xl font-semibold text-[#1E293B] tracking-tight">Settings</h2>
+          <p className="text-sm text-[#64748B]">
+            Company details, products, recycling materials, and who can do what.
           </p>
         </div>
 
-        <div className="flex bg-slate-100 p-1 rounded-lg text-xs font-semibold">
+        <div className="flex bg-slate-100 p-1 rounded-lg text-xs font-semibold overflow-x-auto">
           {[
-            { id: 'PROFILE', label: 'Company Profile' },
-            { id: 'PRODUCTS', label: 'Products & Variants' },
-            { id: 'RECYCLING', label: 'Recycling Outputs Master' },
-            { id: 'ROLES', label: 'User Roles & RBAC' },
+            { id: 'PROFILE', label: 'General' },
+            { id: 'PRODUCTS', label: 'Products' },
+            { id: 'RECYCLING', label: 'Recycling materials' },
+            { id: 'ROLES', label: 'Roles & permissions' },
           ].map((tab) => (
             <button
               key={tab.id}

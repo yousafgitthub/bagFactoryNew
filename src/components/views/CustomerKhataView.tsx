@@ -73,9 +73,9 @@ export function CustomerKhataView() {
       {/* Header & Customer Picker */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h2 className="text-xl font-bold text-[#1E293B] tracking-tight">Customer Khata (Digital Ledger)</h2>
-          <p className="text-xs text-[#64748B]">
-            Double-entry verified customer running balance with payment tracking & printable statements
+          <h2 className="text-xl font-semibold text-[#1E293B] tracking-tight">Customer Khata</h2>
+          <p className="text-sm text-[#64748B]">
+            Running balance, payments received, and a printable statement.
           </p>
         </div>
 

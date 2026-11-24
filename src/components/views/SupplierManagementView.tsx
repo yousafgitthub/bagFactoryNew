@@ -44,9 +44,9 @@ export function SupplierManagementView() {
     <div className="space-y-6 pb-12">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h2 className="text-xl font-bold text-[#1E293B] tracking-tight">Supplier Directory & Payables</h2>
-          <p className="text-xs text-[#64748B]">
-            Raw material importers, scrap plastic vendors, and factory supplies ledgers
+          <h2 className="text-xl font-semibold text-[#1E293B] tracking-tight">Supplier Khata</h2>
+          <p className="text-sm text-[#64748B]">
+            What you owe each supplier, and where you record a payment.
           </p>
         </div>
       </div>

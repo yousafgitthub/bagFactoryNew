@@ -113,7 +113,11 @@ export function RecyclingOverviewView() {
         <KPICard title="Total Recycling Cost" value={`Rs. ${kpis.totalCost.toLocaleString()}`} subtitle={`Rs. ${kpis.avgCostPerKg}/kg avg`} icon={DollarSign} highlightColor="green" />
       </div>
 
-      <div className="grid lg:grid-cols-2 gap-4">
+      <details className="rounded-xl border border-slate-200 bg-white">
+        <summary className="cursor-pointer select-none px-4 py-3 text-sm font-medium text-[#1E293B]">
+          Charts
+        </summary>
+        <div className="grid lg:grid-cols-2 gap-4 p-4 pt-0">
         <ChartCard title="Monthly Recycling Activity">
           <ResponsiveContainer width="100%" height={220}>
             <BarChart data={monthlyActivity}>
@@ -161,7 +165,8 @@ export function RecyclingOverviewView() {
             </PieChart>
           </ResponsiveContainer>
         </ChartCard>
-      </div>
+        </div>
+      </details>
 
       <span className="text-xs text-slate-500">{recyclingOutputTypes.filter((t) => t.active).length} active output material types configured</span>
 

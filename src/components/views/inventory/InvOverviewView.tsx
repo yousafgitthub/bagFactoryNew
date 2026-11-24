@@ -106,7 +106,11 @@ export function InvOverviewView() {
         <KPICard title="Movement Ledger" value={String(movementCount)} subtitle="Audit trail entries" icon={Boxes} highlightColor="navy" />
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      <details className="rounded-xl border border-slate-200 bg-white">
+        <summary className="cursor-pointer select-none px-4 py-3 text-sm font-medium text-[#1E293B]">
+          Charts
+        </summary>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 p-4 pt-0">
         <div className="bg-white rounded-xl border border-slate-200 p-5">
           <h3 className="text-sm font-bold text-slate-800 mb-3">Stock by category (kg)</h3>
           <div className="h-56">
@@ -171,7 +175,8 @@ export function InvOverviewView() {
             </ResponsiveContainer>
           </div>
         </div>
-      </div>
+        </div>
+      </details>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {(Object.keys(CATEGORY_LABELS) as InventoryCategory[]).map((cat) => {

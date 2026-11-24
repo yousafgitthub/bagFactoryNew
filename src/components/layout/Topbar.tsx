@@ -1,23 +1,21 @@
 'use client';
 
 import React, { useState } from 'react';
-import { useERP, ActiveView } from '../../context/ERPContext';
+import { useERP } from '../../context/ERPContext';
 import {
   Search,
   Bell,
-  Calendar,
   Plus,
-  Building2,
   ChevronDown,
   AlertTriangle,
-  User,
   Shield,
-  Layers,
   ArrowRight,
+  Menu,
 } from 'lucide-react';
-import { Badge } from '../common/Badge';
+import { viewMeta } from './navigation';
 
 interface TopbarProps {
+  onOpenMenu?: () => void;
   onOpenNewSale?: () => void;
   onOpenNewProduction?: () => void;
   onOpenNewRecycling?: () => void;
@@ -25,6 +23,7 @@ interface TopbarProps {
 }
 
 export function Topbar({
+  onOpenMenu,
   onOpenNewSale,
   onOpenNewProduction,
   onOpenNewRecycling,
@@ -40,7 +39,6 @@ export function Topbar({
     isSidebarCollapsed,
     inventory,
     salesInvoices,
-    suppliers,
   } = useERP();
 
   const [showNotifications, setShowNotifications] = useState(false);
@@ -50,88 +48,8 @@ export function Topbar({
   // Derive notifications
   const lowStockAlerts = inventory.filter((i) => i.status === 'Low Stock' || i.status === 'Critical');
   const pendingReceivables = salesInvoices.filter((s) => s.paymentStatus !== 'Paid');
-  const supplierPayables = suppliers.filter((s) => s.currentPayable > 0);
   const totalAlertCount = lowStockAlerts.length + pendingReceivables.length;
-
-  const viewTitles: Record<ActiveView, { title: string; breadcrumb: string }> = {
-    login: { title: 'Sign In', breadcrumb: 'Authentication' },
-    dashboard: { title: 'Executive Dashboard', breadcrumb: 'Workspace' },
-    inventory: { title: 'Inventory Management Hub', breadcrumb: 'Inventory' },
-    'inv-overview': { title: 'Inventory Management Hub', breadcrumb: 'Inventory' },
-    'inv-all': { title: 'All Inventory', breadcrumb: 'Inventory' },
-    'inv-low-stock': { title: 'Low Stock Alerts', breadcrumb: 'Inventory' },
-    'inv-issue': { title: 'Issue Stock', breadcrumb: 'Inventory' },
-    'inv-new-raw': { title: 'New Raw Material Stock', breadcrumb: 'Inventory' },
-    'inv-waste': { title: 'Waste Plastic Stock', breadcrumb: 'Inventory' },
-    'inv-recycled': { title: 'Recycled Material Stock', breadcrumb: 'Inventory' },
-    'inv-finished': { title: 'Finished Goods Stock', breadcrumb: 'Inventory' },
-    'inv-receive': { title: 'Receive Stock', breadcrumb: 'Inventory' },
-    'inv-transfer': { title: 'Inter-Warehouse Transfers', breadcrumb: 'Inventory' },
-    'inv-adjustments': { title: 'Stock Adjustments', breadcrumb: 'Inventory' },
-    'inv-movements': { title: 'Movement Ledger', breadcrumb: 'Inventory' },
-    'inv-warehouses': { title: 'Warehouses', breadcrumb: 'Inventory' },
-    'inv-reports': { title: 'Inventory Reports', breadcrumb: 'Inventory' },
-    'inv-settings': { title: 'Inventory Settings', breadcrumb: 'Inventory' },
-    production: { title: 'Production Overview', breadcrumb: 'Production' },
-    'production-planning': { title: 'Production Planning', breadcrumb: 'Production' },
-    'production-orders': { title: 'Production Orders', breadcrumb: 'Production' },
-    'production-create': { title: 'Create Production Batch', breadcrumb: 'Production' },
-    'production-active': { title: 'Active Production', breadcrumb: 'Production' },
-    'production-completed': { title: 'Completed Production', breadcrumb: 'Production' },
-    'production-consumption': { title: 'Production Consumption', breadcrumb: 'Production' },
-    'production-output': { title: 'Production Output', breadcrumb: 'Production' },
-    'production-loss': { title: 'Production Loss', breadcrumb: 'Production' },
-    'production-costs': { title: 'Production Costs', breadcrumb: 'Production' },
-    'production-reports': { title: 'Production Reports', breadcrumb: 'Production' },
-    'production-settings': { title: 'Production Settings', breadcrumb: 'Production' },
-    'production-batch-detail': { title: 'Production Batch Detail', breadcrumb: 'Production' },
-    recycling: { title: 'Recycling Overview', breadcrumb: 'Recycling' },
-    'recycling-batches': { title: 'Recycling Batches', breadcrumb: 'Recycling' },
-    'recycling-create': { title: 'Create Recycling Batch', breadcrumb: 'Recycling' },
-    'recycling-batch-detail': { title: 'Recycling Batch Detail', breadcrumb: 'Recycling' },
-    'recycling-inputs': { title: 'Recycling Inputs', breadcrumb: 'Recycling' },
-    'recycling-outputs': { title: 'Recycling Outputs', breadcrumb: 'Recycling' },
-    'recycling-loss': { title: 'Processing Loss', breadcrumb: 'Recycling' },
-    'recycling-costs': { title: 'Recycling Costs', breadcrumb: 'Recycling' },
-    'recycling-reports': { title: 'Recycling Reports', breadcrumb: 'Recycling' },
-    'recycling-settings': { title: 'Recycling Settings', breadcrumb: 'Recycling' },
-    sales: { title: 'Sales Overview', breadcrumb: 'Sales' },
-    'sales-all': { title: 'All Sales Invoices', breadcrumb: 'Sales' },
-    'sales-create': { title: 'Create Sales Invoice', breadcrumb: 'Sales' },
-    'sales-returns': { title: 'Sales Returns', breadcrumb: 'Sales' },
-    'sales-payments': { title: 'Customer Payments', breadcrumb: 'Sales' },
-    'sales-outstanding': { title: 'Outstanding Invoices', breadcrumb: 'Sales' },
-    'sales-reports': { title: 'Sales Reports', breadcrumb: 'Sales' },
-    'sales-settings': { title: 'Sales Settings', breadcrumb: 'Sales' },
-    'sales-invoice-detail': { title: 'Invoice Detail', breadcrumb: 'Sales' },
-    purchases: { title: 'Purchase Overview', breadcrumb: 'Purchasing' },
-    'purchases-all': { title: 'All Purchases', breadcrumb: 'Purchasing' },
-    'purchases-create': { title: 'Create Purchase', breadcrumb: 'Purchasing' },
-    'purchases-receive': { title: 'Goods Receiving', breadcrumb: 'Purchasing' },
-    'purchases-returns': { title: 'Purchase Returns', breadcrumb: 'Purchasing' },
-    'purchases-payments': { title: 'Supplier Payments', breadcrumb: 'Purchasing' },
-    'purchases-outstanding': { title: 'Outstanding Payables', breadcrumb: 'Purchasing' },
-    'purchases-reports': { title: 'Purchase Reports', breadcrumb: 'Purchasing' },
-    'purchases-settings': { title: 'Purchase Settings', breadcrumb: 'Purchasing' },
-    'purchases-detail': { title: 'Purchase Detail', breadcrumb: 'Purchasing' },
-    'purchase-suppliers': { title: 'Supplier Management', breadcrumb: 'Purchasing' },
-    'purchase-supplier-detail': { title: 'Supplier Details', breadcrumb: 'Purchasing' },
-    'purchase-supplier-statement': { title: 'Supplier Statement', breadcrumb: 'Purchasing' },
-    customers: { title: 'Customer Directory', breadcrumb: 'Business' },
-    suppliers: { title: 'Supplier Directory', breadcrumb: 'Business' },
-    khata: { title: 'Customer & Supplier Khata (Digital Ledger)', breadcrumb: 'Business' },
-    expenses: { title: 'Factory Operating Expenses', breadcrumb: 'Business' },
-    employees: { title: 'Employee Management & Labor', breadcrumb: 'Management' },
-    salaries: { title: 'Salary & Advances Disbursement', breadcrumb: 'Management' },
-    loans: { title: 'Business Loans & Facilities', breadcrumb: 'Management' },
-    'cash-bank': { title: 'Cash & Bank Accounts', breadcrumb: 'Management' },
-    reports: { title: 'Financial & Operational Reports', breadcrumb: 'Management' },
-    documents: { title: 'Documents & Bill Attachments', breadcrumb: 'System' },
-    users: { title: 'User Roles & Permissions', breadcrumb: 'System' },
-    settings: { title: 'Factory Configuration & Master Data', breadcrumb: 'System' },
-  };
-
-  const currentInfo = viewTitles[currentView] || { title: 'ERP Overview', breadcrumb: 'System' };
+  const currentInfo = viewMeta(currentView);
 
   const handleRoleSwitch = (role: 'owner_admin' | 'accountant' | 'production_mgr' | 'inventory_mgr' | 'sales_staff') => {
     if (!currentUser) return;
@@ -152,20 +70,23 @@ export function Topbar({
 
   return (
     <header
-      className={`fixed top-0 right-0 z-30 h-16 bg-white border-b border-[#E2E8F0] flex items-center justify-between px-6 transition-all duration-300 ${
-        isSidebarCollapsed ? 'left-20' : 'left-64'
+      className={`fixed top-0 right-0 z-30 h-16 bg-white border-b border-[#E2E8F0] flex items-center justify-between gap-3 px-4 sm:px-6 left-0 ${
+        isSidebarCollapsed ? 'lg:left-20' : 'lg:left-64'
       }`}
     >
-      {/* Left: Breadcrumb & Title */}
-      <div className="flex flex-col min-w-0">
-        <div className="flex items-center gap-1.5 text-xs text-[#64748B]">
-          <span>BagFactory ERP</span>
-          <span>/</span>
-          <span>{currentInfo.breadcrumb}</span>
+      <div className="flex items-center gap-2 min-w-0">
+        <button
+          type="button"
+          onClick={onOpenMenu}
+          className="lg:hidden p-2 -ml-1 rounded-lg text-slate-600 hover:bg-slate-100"
+          aria-label="Open menu"
+        >
+          <Menu className="w-5 h-5" />
+        </button>
+        <div className="min-w-0">
+          <p className="text-[11px] text-[#64748B] truncate">{currentInfo.section}</p>
+          <h1 className="text-base font-semibold text-[#1E293B] truncate">{currentInfo.title}</h1>
         </div>
-        <h1 className="text-base font-bold text-[#1E293B] truncate tracking-tight">
-          {currentInfo.title}
-        </h1>
       </div>
 
       {/* Center: Global Search */}
@@ -190,20 +111,6 @@ export function Topbar({
 
       {/* Right Actions */}
       <div className="flex items-center gap-3">
-        {/* Factory / Currency Badge */}
-        <div className="hidden xl:flex items-center gap-2 px-2.5 py-1 rounded-md bg-slate-50 border border-[#E2E8F0] text-xs text-slate-700">
-          <Building2 className="w-3.5 h-3.5 text-blue-600" />
-          <span className="font-semibold text-slate-800">Unit 1 (Korangi / Gujranwala)</span>
-          <span className="text-slate-300">|</span>
-          <span className="font-medium text-emerald-700 bg-emerald-50 px-1 rounded">PKR (Rs.)</span>
-        </div>
-
-        {/* Date Context */}
-        <div className="hidden lg:flex items-center gap-1.5 text-xs text-[#64748B] px-2 py-1 rounded bg-slate-50 border border-slate-200">
-          <Calendar className="w-3.5 h-3.5 text-slate-500" />
-          <span>Saturday, 14 Nov 2026</span>
-        </div>
-
         {/* Quick Action Button */}
         <div className="relative">
           <button
